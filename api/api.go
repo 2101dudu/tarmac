@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
-	"tarmac/mapper/wsdl_to_dto"
+	"tarmac/internal/render"
 	"tarmac/wsdl"
 	"time"
 
@@ -37,7 +37,7 @@ func (a *Api) handleSearchProduct(c *gin.Context) {
 	})
 	HandleErr(err)
 
-	c.JSON(http.StatusOK, wsdl_to_dto.ToSearchProductResponseDTO(productSearch))
+	c.Render(http.StatusOK, render.JSON{Data: productSearch})
 }
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
@@ -53,5 +53,5 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	})
 	HandleErr(err)
 
-	c.JSON(http.StatusOK, wsdl_to_dto.ToDynProductParametersResponseDTO(productParams))
+	c.Render(http.StatusOK, render.JSON{Data: productParams})
 }
