@@ -21,6 +21,7 @@ func (a *Api) Start() {
 	engine.GET("api/search/product", a.handleSearchProduct)
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
+	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
 
 	engine.Run(":8080")
 }
@@ -60,6 +61,24 @@ func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
 
 	input.Credentials = a.Credentials
 	resp, err := a.SoapService.DynSearchProductAvailableServices(&input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
+}
+
+func (a *Api) handleDynSetServicesSelected(c *gin.Context) {
+	var input wsdl.DynServicesSelectedRequest
+
+	if err := c.BindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	input.Credentials = a.Credentials
+	resp, err := a.SoapService.DynSetServicesSelected(&input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
