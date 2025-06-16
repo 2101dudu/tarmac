@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"tarmac/internal/render"
 	"tarmac/wsdl"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,18 +16,13 @@ type Api struct {
 
 func (a *Api) Start() {
 	engine := gin.Default()
+	engine.SetTrustedProxies(nil)
 
 	engine.GET("api/search/product", a.handleSearchProduct)
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
+	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
 
-	srv := &http.Server{
-		Addr:           ":8080",
-		Handler:        engine,
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-	srv.ListenAndServe()
+	engine.Run(":8080")
 }
 
 func (a *Api) handleSearchProduct(c *gin.Context) {
@@ -54,4 +48,22 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	HandleErr(err)
 
 	c.Render(http.StatusOK, render.JSON{Data: productParams})
+}
+
+func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
+	var input wsdl.DynProductAvailableServicesRequest
+
+	if err := c.BindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	input.Credentials = a.Credentials
+	resp, err := a.SoapService.DynSearchProductAvailableServices(&input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
 }
