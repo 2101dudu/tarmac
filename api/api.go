@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"tarmac/api/helper"
 	"tarmac/internal/render"
 	"tarmac/wsdl"
 
@@ -71,13 +72,19 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	}
 
 	input.Credentials = a.Credentials
-	productSearch, err := a.SoapService.SearchProducts(&input)
+	response, err := a.SoapService.SearchProducts(&input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search products: " + err.Error()})
 		return
 	}
 
-	c.Render(http.StatusOK, render.JSON{Data: productSearch})
+	err = helper.OptimizeProductSearch(response)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid number of products: " + err.Error()})
+		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: response})
 }
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
