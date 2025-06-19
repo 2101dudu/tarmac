@@ -22,6 +22,8 @@ func (a *Api) Start() {
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
+	engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
+	engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 
 	engine.Run(":8080")
 }
@@ -79,6 +81,42 @@ func (a *Api) handleDynSetServicesSelected(c *gin.Context) {
 
 	input.Credentials = a.Credentials
 	resp, err := a.SoapService.DynSetServicesSelected(&input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
+}
+
+func (a *Api) handleDynCheckSetServices(c *gin.Context) {
+	var input wsdl.DynGetOptionalsSelectedRequest
+
+	if err := c.BindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	input.Credentials = a.Credentials
+	resp, err := a.SoapService.DynGetOptionalsSelected(&input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
+}
+
+func (a *Api) handleDynGetSimulation(c *gin.Context) {
+	var input wsdl.DynGetSimulationRequest
+
+	if err := c.BindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	input.Credentials = a.Credentials
+	resp, err := a.SoapService.DynGetSimulation(&input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
