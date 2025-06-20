@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"tarmac/api"
+	"tarmac/db"
 	"tarmac/wsdl"
 
 	"github.com/fiorix/wsdl2go/soap"
@@ -32,15 +33,19 @@ func loadCredentials() *wsdl.CredentialsStruct {
 }
 
 func main() {
-	credentials := loadCredentials()
-
-	cli := soap.Client{
+	soapClient := soap.Client{
 		URL:       "https://www3.optitravel.net/optitravel/export/wbs/pkt/wbs_server.php",
 		Namespace: wsdl.Namespace,
 	}
-	soapService := wsdl.NewWbs_pkt_methodsSoap(&cli)
+	soapService := wsdl.NewWbs_pkt_methodsSoap(&soapClient)
+	credentials := loadCredentials()
 
-	api := api.Api{SoapService: soapService, Credentials: credentials}
+	dbClient := db.Client{
+		Addr: "localhost:6379",
+	}
+	dbService := db.Start(&dbClient)
+
+	api := api.Api{SoapService: soapService, Credentials: credentials, DBService: dbService}
 
 	api.Start()
 }

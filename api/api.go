@@ -1,19 +1,26 @@
 package api
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"tarmac/api/helper"
 	"tarmac/internal/render"
 	"tarmac/wsdl"
+	"time"
+
+	goccyjson "github.com/goccy/go-json"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis"
 )
 
 type Api struct {
 	SoapService wsdl.Wbs_pkt_methodsSoap
 	Credentials *wsdl.CredentialsStruct
+	DBService   *redis.Client
 }
 
 func (a *Api) Start() {
@@ -40,6 +47,25 @@ func (a *Api) Start() {
 }
 
 func (a *Api) handleGetMasterData(c *gin.Context) {
+	key := getSHA256Hash(c.Request.URL.String())
+
+	value, err := a.DBService.Get(key).Result()
+	if err == nil { // has entry, return cache
+		var cachedResp *wsdl.SearchProductMasterDataResponse
+		if err := goccyjson.Unmarshal([]byte(value), &cachedResp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Corrupted cache data"})
+			return
+		}
+		dbSize, err := a.DBService.DBSize().Result()
+		if err != nil {
+			log.Fatalf("failed to get DB size: %v", err)
+		}
+		fmt.Printf("Redis DB has %d keys\n", dbSize)
+
+		c.Render(http.StatusOK, render.JSON{Data: cachedResp})
+		return
+	}
+
 	masterData, err := a.SoapService.SearchProductMasterData(&wsdl.SearchProductMasterDataRequest{
 		Credentials: a.Credentials,
 	})
@@ -47,6 +73,13 @@ func (a *Api) handleGetMasterData(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get master data: " + err.Error()})
 		return
 	}
+
+	jsonData, err := goccyjson.Marshal(masterData)
+	if err != nil {
+		log.Fatalf("failed to marshal trips: %v", err)
+	}
+
+	a.DBService.Set(key, jsonData, 1*time.Hour)
 
 	c.Render(http.StatusOK, render.JSON{Data: masterData})
 }
