@@ -3,7 +3,6 @@ package helper
 import (
 	"errors"
 	"regexp"
-	"sort"
 	"strconv"
 	"tarmac/wsdl"
 )
@@ -53,10 +52,6 @@ func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 
 		filtered = append(filtered, productWithPrice{product, price})
 	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].price < filtered[j].price
-	})
 
 	cleaned := original[:0]
 	for _, pp := range filtered {
