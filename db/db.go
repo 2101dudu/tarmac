@@ -13,6 +13,5 @@ func Start(db *Client) *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr: db.Addr,
 	})
-
 	return client
 }

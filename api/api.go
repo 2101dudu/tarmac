@@ -1,11 +1,14 @@
 package api
 
 import (
-	"fmt"
-	"log"
+	"bytes"
+	"io"
 	"net/http"
 	"strconv"
+	"tarmac/api/cache"
 	"tarmac/api/helper"
+	"tarmac/cache"
+	"tarmac/env"
 	"tarmac/internal/render"
 	"tarmac/wsdl"
 	"time"
@@ -20,6 +23,7 @@ import (
 type Api struct {
 	SoapService wsdl.Wbs_pkt_methodsSoap
 	Credentials *wsdl.CredentialsStruct
+	CacheTimes  *env.CacheTimes
 	DBService   *redis.Client
 }
 
@@ -47,77 +51,35 @@ func (a *Api) Start() {
 }
 
 func (a *Api) handleGetMasterData(c *gin.Context) {
-	key := getSHA256Hash(c.Request.URL.String())
-
-	value, err := a.DBService.Get(key).Result()
-	if err == nil { // has entry, return cache
-		var cachedResp *wsdl.SearchProductMasterDataResponse
-		if err := goccyjson.Unmarshal([]byte(value), &cachedResp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Corrupted cache data"})
-			return
-		}
-		dbSize, err := a.DBService.DBSize().Result()
-		if err != nil {
-			log.Fatalf("failed to get DB size: %v", err)
-		}
-		fmt.Printf("Redis DB has %d keys\n", dbSize)
-
-		c.Render(http.StatusOK, render.JSON{Data: cachedResp})
-		return
-	}
-
-	masterData, err := a.SoapService.SearchProductMasterData(&wsdl.SearchProductMasterDataRequest{
-		Credentials: a.Credentials,
+	cacheHandler(c, getSHA256Hash(c.Request.URL.String()), *a.CacheTimes.LongCacheTime, a.DBService, func() (*wsdl.SearchProductMasterDataResponse, error) {
+		return a.SoapService.SearchProductMasterData(&wsdl.SearchProductMasterDataRequest{
+			Credentials: a.Credentials,
+		})
 	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get master data: " + err.Error()})
-		return
-	}
-
-	jsonData, err := goccyjson.Marshal(masterData)
-	if err != nil {
-		log.Fatalf("failed to marshal trips: %v", err)
-	}
-
-	a.DBService.Set(key, jsonData, 1*time.Hour)
-
-	c.Render(http.StatusOK, render.JSON{Data: masterData})
 }
 
 func (a *Api) handleSearchProduct(c *gin.Context) {
-	productSearch, err := a.SoapService.SearchProducts(&wsdl.SearchProductRequest{
-		Credentials: a.Credentials,
+	cacheHandler(c, getSHA256Hash(c.Request.URL.String()), *a.CacheTimes.LongCacheTime, a.DBService, func() (*wsdl.SearchProductResponse, error) {
+		return a.SoapService.SearchProducts(&wsdl.SearchProductRequest{
+			Credentials: a.Credentials,
+		})
 	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search products: " + err.Error()})
-		return
-	}
-
-	c.Render(http.StatusOK, render.JSON{Data: productSearch})
 }
 
 func (a *Api) handleSearchProductWithBody(c *gin.Context) {
-	var input wsdl.SearchProductRequest
-
-	if err := c.BindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
-		return
-	}
-
-	input.Credentials = a.Credentials
-	response, err := a.SoapService.SearchProducts(&input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search products: " + err.Error()})
-		return
-	}
-
-	err = helper.OptimizeProductSearch(response)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid number of products: " + err.Error()})
-		return
-	}
-
-	c.Render(http.StatusOK, render.JSON{Data: response})
+	cacheHandlerWithBody(
+		c,
+		*a.CacheTimes.MediumCacheTime,
+		a.DBService,
+		func(req *wsdl.SearchProductRequest) (*wsdl.SearchProductResponse, error) {
+			req.Credentials = a.Credentials
+			resp, err := a.SoapService.SearchProducts(req)
+			if err != nil {
+				return nil, err
+			}
+			return resp, helper.OptimizeProductSearch(resp)
+		},
+	)
 }
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
@@ -127,16 +89,18 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 		return
 	}
 
-	productParams, err := a.SoapService.DynGetProductParameters(&wsdl.DynProductParametersRequest{
-		Credentials: a.Credentials,
-		Productcode: &prodCode,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get product parameters: " + err.Error()})
-		return
-	}
-
-	c.Render(http.StatusOK, render.JSON{Data: productParams})
+	cacheHandler[wsdl.DynProductParametersResponse](
+		c,
+		getSHA256Hash(c.Request.URL.Path+"?"+c.Request.URL.RawQuery),
+		*a.CacheTimes.MediumCacheTime,
+		a.DBService,
+		func() (*wsdl.DynProductParametersResponse, error) {
+			return a.SoapService.DynGetProductParameters(&wsdl.DynProductParametersRequest{
+				Credentials: a.Credentials,
+				Productcode: &prodCode,
+			})
+		},
+	)
 }
 
 func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
@@ -206,6 +170,67 @@ func (a *Api) handleDynGetSimulation(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
+}
+
+func cacheHandler[T any](c *gin.Context, key string, ttl time.Duration, db *redis.Client, fetch func() (*T, error)) {
+	dataInCache := cache.CheckCacheHit[T](key, db)
+	if dataInCache != nil {
+		c.Render(http.StatusOK, render.JSON{Data: dataInCache})
+		return
+	}
+
+	resp, err := fetch()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	jsonData, err := goccyjson.Marshal(resp)
+	if err == nil {
+		db.Set(key, jsonData, ttl)
+	}
+
+	c.Render(http.StatusOK, render.JSON{Data: resp})
+}
+
+func cacheHandlerWithBody[In any, Out any](
+	c *gin.Context,
+	ttl time.Duration,
+	db *redis.Client,
+	fetch func(*In) (*Out, error),
+) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body"})
+		return
+	}
+
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	key := getSHA256Hash(c.Request.URL.Path + string(body))
+	dataInCache := cache.CheckCacheHit[Out](key, db)
+	if dataInCache != nil {
+		c.Render(http.StatusOK, render.JSON{Data: dataInCache})
+		return
+	}
+
+	var input In
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	resp, err := fetch(&input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if jsonData, err := goccyjson.Marshal(resp); err == nil {
+		db.Set(key, jsonData, ttl)
 	}
 
 	c.Render(http.StatusOK, render.JSON{Data: resp})
