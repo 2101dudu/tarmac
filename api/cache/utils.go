@@ -12,6 +12,7 @@ func CheckCacheHit[Out any](key string, db *redis.Client) *Out {
 	if err == nil { // chache hit
 		var cachedResp Out
 		if err := goccyjson.Unmarshal([]byte(val), &cachedResp); err == nil {
+			log.Printf("Cache hit for key %s", key)
 			return &cachedResp
 		}
 		log.Printf("Cache unmarshal failed for key %s: %v", key, err)
