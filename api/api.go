@@ -10,6 +10,7 @@ import (
 	"tarmac/db"
 	"tarmac/env"
 	"tarmac/wsdl"
+	"time"
 
 	goccyjson "github.com/goccy/go-json"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -128,6 +129,14 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		return
 	}
 	input.Credentials = a.Credentials
+	if input.DepDate != nil {
+		// convert strings like "2025-01-09" and "2025-1-9" into
+		// the same format, to avoid differnt hash values for the same
+		// query
+		if canonicalizedDate, err := time.Parse(time.DateOnly, *input.DepDate); err == nil {
+			*input.DepDate = canonicalizedDate.String()
+		}
+	}
 
 	// Key/ID for caching and DB (use full body hash)
 	key := getSHA256Hash(c.Request.URL.Path + string(body))
@@ -148,7 +157,25 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	}
 
 	if refreshDB {
-		go db.RefreshDB(a.DBService, collectionName, id, data)
+		go func() { // avoid concurrency in mongoDB
+			db.RefreshDB(a.DBService, collectionName, id, data)
+
+			for _, product := range data.ProductArray.Items { // refresh every single product entry from the listing
+				if product.Code == nil {
+					log.Println("Internal ERROR: product code is empty") // temp
+					continue
+				}
+
+				// check if product is outdated
+				existing, outdated := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", *product.Code)
+				if existing != nil && !outdated {
+					log.Println("Already existing product:", *product.Code) // temp
+					continue                                                // fresh, skip
+				}
+				db.RefreshDB(a.DBService, "product_index", *product.Code, product)
+				log.Println("Refreshed product:", *product.Code) // temp
+			}
+		}()
 	}
 
 	if refreshCache {
