@@ -165,15 +165,21 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 					log.Println("Internal ERROR: product code is empty") // temp
 					continue
 				}
+				prodCodeInt, err := strconv.Atoi(*product.Code)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
+					return
+				}
+				prodCode := strconv.Itoa(prodCodeInt)
 
 				// check if product is outdated
-				existing, outdated := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", *product.Code)
+				existing, outdated := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", prodCode)
 				if existing != nil && !outdated {
-					log.Println("Already existing product:", *product.Code) // temp
-					continue                                                // fresh, skip
+					log.Println("Already existing product:", prodCode) // temp
+					continue                                           // fresh, skip
 				}
-				db.RefreshDB(a.DBService, "product_index", *product.Code, product)
-				log.Println("Refreshed product:", *product.Code) // temp
+				db.RefreshDB(a.DBService, "product_index", prodCode, product)
+				log.Println("Refreshed product:", prodCode) // temp
 			}
 		}()
 	}
@@ -263,40 +269,82 @@ func (a *Api) handleSearchProductPagination(c *gin.Context) {
 }
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
-	prodCode := c.Param("prodCode")
-	if _, err := strconv.Atoi(prodCode); err != nil {
+	prodCodeRaw := c.Param("prodCode")
+	prodCodeInt, err := strconv.Atoi(prodCodeRaw)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
 		return
 	}
+	prodCode := strconv.Itoa(prodCodeInt)
 
-	key := getSHA256Hash(c.Request.URL.Path + "?" + c.Request.URL.RawQuery)
+	cacheKey := prodCode
 	collectionName := "dyn_product_parameters"
 	id := prodCode
 
-	data, refreshDB, refreshCache, err := getData(
-		a, key, collectionName, id,
-		func() (*wsdl.DynProductParametersResponse, error) {
-			return a.SoapService.DynGetProductParameters(&wsdl.DynProductParametersRequest{
-				Credentials: a.Credentials,
-				Productcode: &prodCode,
-			})
-		},
-	)
+	type productWithDescription struct {
+		Data             wsdl.DynProductParametersResponse `json:"data"`
+		DescriptionArray wsdl.TextContentArray             `json:"descriptionArray"`
+	}
+
+	// Check cache first
+	cachedData := cache.CheckCacheHit[productWithDescription](cacheKey, a.CacheService)
+	if cachedData != nil {
+		c.JSON(http.StatusOK, *cachedData)
+		return
+	}
+
+	refreshDB := false
+	refreshCache := false
+
+	// Check DB next
+	dbData, refreshDB := db.CheckDBHit[productWithDescription](a.DBService, collectionName, id)
+	if dbData != nil {
+		if refreshDB {
+			log.Println()
+		}
+		refreshCache = true
+		c.JSON(http.StatusOK, *dbData)
+	}
+
+	// Not in cache or DB, fetch data from API
+	data, err := a.SoapService.DynGetProductParameters(&wsdl.DynProductParametersRequest{
+		Credentials: a.Credentials,
+		Productcode: &prodCode,
+	})
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	// TODO: check if "outdated" matters...
+	// ...., outdated := ...
+	product, _ := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", id)
+
+	if product == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No text array for this product"})
+		log.Println("[WARNING] No text array for product:", prodCode)
+		return
+	}
+	var arr wsdl.TextContentArray
+	if product.TextContentsArray != nil {
+		arr = *product.TextContentsArray
+	}
+
+	fullData := productWithDescription{
+		Data:             *data,
+		DescriptionArray: arr,
+	}
+
 	if refreshDB {
-		go db.RefreshDB(a.DBService, collectionName, id, data)
+		go db.RefreshDB(a.DBService, collectionName, id, fullData)
 	}
 
 	if refreshCache {
-		go cache.RefreshCache(data, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+		go cache.RefreshCache(fullData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
 	}
 
-	c.JSON(http.StatusOK, data)
+	c.JSON(http.StatusOK, fullData)
 }
 
 func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
