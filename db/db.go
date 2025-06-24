@@ -45,7 +45,8 @@ func returnCollectionPointer(dbClient *mongo.Client, collection string) *mongo.C
 }
 
 func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string) (*T, bool) {
-	soapStore, err := loadData(dbClient, collectionName, id)
+	collection := returnCollectionPointer(dbClient, collectionName)
+	soapStore, err := loadData(collection, collectionName, id)
 	if err == mongo.ErrNoDocuments {
 		log.Println("No DB Hit!")
 		return nil, false
@@ -60,7 +61,8 @@ func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string)
 }
 
 func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data any) {
-	err := storeData(dbClient, collectionName, id, data)
+	collection := returnCollectionPointer(dbClient, collectionName)
+	err := storeData(collection, collectionName, id, data)
 	if err != nil {
 		log.Println("Failed DB refresh:", err)
 	} else {

@@ -15,9 +15,7 @@ type SOAPStore struct {
 	FetchedAt time.Time `bson:"fetched_at"`
 }
 
-func storeData(dbClient *mongo.Client, collectionName string, id string, data any) error {
-	collection := returnCollectionPointer(dbClient, collectionName)
-
+func storeData(collection *mongo.Collection, collectionName string, id string, data any) error {
 	compressedData, err := json.Compress(data)
 	if err != nil {
 		return err
@@ -39,9 +37,7 @@ func storeData(dbClient *mongo.Client, collectionName string, id string, data an
 	return err
 }
 
-func loadData(dbClient *mongo.Client, collectionName string, id string) (SOAPStore, error) {
-	collection := returnCollectionPointer(dbClient, collectionName)
-
+func loadData(collection *mongo.Collection, collectionName string, id string) (SOAPStore, error) {
 	var result SOAPStore
 	err := collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(&result)
 	return result, err
