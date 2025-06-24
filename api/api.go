@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"tarmac/api/helper"
 	"tarmac/cache"
 	"tarmac/db"
 	"tarmac/env"
@@ -114,21 +115,50 @@ func (a *Api) handleSearchProduct(c *gin.Context) {
 }
 
 func (a *Api) handleSearchProductWithBody(c *gin.Context) {
-	// Read and preserve request body
+	// Read the full body
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body"})
 		return
 	}
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body)) // reset for re-read if needed
 
-	// Parse input
+	// Unmarshal to generic map
+	var raw map[string]any
+	if err := goccyjson.Unmarshal(body, &raw); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body"})
+		return
+	}
+
+	// Extract special fields
+	sortBy := ""
+	if val, ok := raw["SortBy"].(string); ok {
+		sortBy = val
+		delete(raw, "SortBy") // remove to avoid polluting wsdl struct
+	}
+
+	sortOrder := ""
+	if val, ok := raw["SortOrder"].(string); ok {
+		sortOrder = val
+		delete(raw, "SortOrder")
+	}
+
+	// Marshal back only the relevant search fields for the WSDL
+	cleanBody, err := goccyjson.Marshal(raw)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process input"})
+		return
+	}
+
+	// Now unmarshal into your actual WSDL struct
 	var input wsdl.SearchProductRequest
-	if err := goccyjson.Unmarshal(body, &input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+	if err := goccyjson.Unmarshal(cleanBody, &input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input for WSDL: " + err.Error()})
 		return
 	}
 	input.Credentials = a.Credentials
+
+	// Normalize dep date
 	if input.DepDate != nil {
 		// convert strings like "2025-01-09" and "2025-1-9" into
 		// the same format, to avoid differnt hash values for the same
@@ -138,10 +168,10 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		}
 	}
 
-	// Key/ID for caching and DB (use full body hash)
-	key := getSHA256Hash(c.Request.URL.Path + string(body))
+	// Hash using re-marshaled cleanBody
+	key := getSHA256Hash(c.Request.URL.Path + string(cleanBody))
 	collectionName := "search_product_with_body"
-	id := key // using request-specific key as Mongo ID to make entry unique per request
+	id := key
 
 	// Cache + DB dance
 	data, refreshDB, refreshCache, err := getData(
@@ -153,6 +183,12 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = helper.OptimizeProductSearch(data)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to optimize product search: " + err.Error()})
 		return
 	}
 
@@ -186,6 +222,10 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 
 	if refreshCache {
 		go cache.RefreshCache(data, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+	}
+
+	if sortBy != "" {
+		data.ProductArray.Items = helper.SortProducts(data.ProductArray.Items, sortBy, sortOrder)
 	}
 
 	// Page token for pagination
