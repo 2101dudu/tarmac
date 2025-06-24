@@ -24,9 +24,9 @@ func storeData(dbClient *mongo.Client, collectionName string, id string, data an
 	}
 
 	doc := bson.M{
-		"_id":       id,
-		"payload":   compressedData,
-		"stored_at": time.Now(),
+		"_id":        id,
+		"payload":    compressedData,
+		"fetched_at": time.Now(),
 	}
 
 	_, err = collection.ReplaceOne(

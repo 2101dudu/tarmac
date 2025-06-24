@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"tarmac/cache"
@@ -146,7 +147,6 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		return
 	}
 
-	// Refresh background data if necessary
 	if refreshDB {
 		go db.RefreshDB(a.DBService, collectionName, id, data)
 	}
@@ -357,6 +357,9 @@ func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func(
 	// Check DB next
 	dbData, outdated := db.CheckDBHit[T](a.DBService, collectionName, id)
 	if dbData != nil {
+		if outdated {
+			log.Println()
+		}
 		return *dbData, outdated, true, nil
 	}
 

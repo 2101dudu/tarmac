@@ -40,6 +40,8 @@ func loadCacheTimes() *CacheTimes {
 		if val, ok := os.LookupEnv(envKey); ok {
 			if dur, err := time.ParseDuration(val); err == nil {
 				return &dur
+			} else {
+				log.Fatal("Incorrect time syntax:", err)
 			}
 		}
 		return nil
