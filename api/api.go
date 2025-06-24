@@ -284,6 +284,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	type productWithDescription struct {
 		Data             wsdl.DynProductParametersResponse `json:"data"`
 		DescriptionArray wsdl.TextContentArray             `json:"descriptionArray"`
+		PhotoArray       wsdl.PhotoArray                   `json:"photoArray"`
 	}
 
 	// Check cache first
@@ -293,17 +294,14 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 		return
 	}
 
-	refreshDB := false
-	refreshCache := false
-
 	// Check DB next
 	dbData, refreshDB := db.CheckDBHit[productWithDescription](a.DBService, collectionName, id)
 	if dbData != nil {
-		if refreshDB {
-			log.Println()
-		}
-		refreshCache = true
+		go cache.RefreshCache(dbData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
 		c.JSON(http.StatusOK, *dbData)
+		if !refreshDB {
+			return // fresh, skip fetching from API
+		}
 	}
 
 	// Not in cache or DB, fetch data from API
@@ -322,8 +320,8 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	product, _ := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", id)
 
 	if product == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "No text array for this product"})
-		log.Println("[WARNING] No text array for product:", prodCode)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No product"})
+		log.Println("[WARNING] No product:", prodCode)
 		return
 	}
 	var arr wsdl.TextContentArray
@@ -331,18 +329,19 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 		arr = *product.TextContentsArray
 	}
 
+	var photos wsdl.PhotoArray
+	if product.PhotoArray != nil {
+		photos = *product.PhotoArray
+	}
+
 	fullData := productWithDescription{
 		Data:             *data,
 		DescriptionArray: arr,
+		PhotoArray:       photos,
 	}
 
-	if refreshDB {
-		go db.RefreshDB(a.DBService, collectionName, id, fullData)
-	}
-
-	if refreshCache {
-		go cache.RefreshCache(fullData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
-	}
+	go db.RefreshDB(a.DBService, collectionName, id, fullData)
+	go cache.RefreshCache(fullData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
 
 	c.JSON(http.StatusOK, fullData)
 }

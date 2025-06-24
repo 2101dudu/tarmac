@@ -48,10 +48,10 @@ func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string)
 	collection := returnCollectionPointer(dbClient, collectionName)
 	soapStore, err := loadData(collection, collectionName, id)
 	if err == mongo.ErrNoDocuments {
-		log.Println("No DB Hit!")
+		log.Println("No DB Hit for", collectionName)
 		return nil, false
 	}
-	log.Println("DB Hit!")
+	log.Println("DB Hit for", collectionName)
 	uncompressedData, err := json.Uncompress[T](soapStore.Payload)
 	if err != nil {
 		log.Println("Error uncompressing json:", err)
@@ -66,6 +66,6 @@ func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data an
 	if err != nil {
 		log.Println("Failed DB refresh:", err)
 	} else {
-		log.Println("DB refreshed!")
+		log.Println("DB refreshed for", collectionName)
 	}
 }
