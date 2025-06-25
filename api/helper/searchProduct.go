@@ -37,8 +37,8 @@ func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 			continue
 		}
 
-		price, err := strconv.ParseFloat(*product.PriceFrom, 64)
-		if err != nil || price <= 0.0 {
+		price := atof(*product.PriceFrom)
+		if price == nil || *price <= 0.0 {
 			totalProducts--
 			continue
 		}
@@ -50,7 +50,7 @@ func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 		product.Location = nil
 		product.Zone = nil
 
-		filtered = append(filtered, productWithPrice{product, price})
+		filtered = append(filtered, productWithPrice{product, *price})
 	}
 
 	cleaned := original[:0]

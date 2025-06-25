@@ -16,14 +16,24 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 	switch strings.ToLower(sortBy) {
 	case "price":
 		sort.SliceStable(products, func(i int, j int) bool {
+			p1, p2 := products[i].PriceFrom, products[j].PriceFrom
+
 			// Null checks just in case
-			if products[i].PriceFrom == nil || products[j].PriceFrom == nil {
+			if p1 == nil || p2 == nil {
 				return false
 			}
-			if ascending {
-				return *products[i].PriceFrom < *products[j].PriceFrom
+
+			priceI := atof(*p1)
+			priceJ := atof(*p2)
+			if priceI == nil || priceJ == nil {
+				return false
 			}
-			return *products[i].PriceFrom > *products[j].PriceFrom
+
+			res := *priceI < *priceJ
+			if ascending {
+				return res
+			}
+			return !res
 		})
 	case "name":
 		sort.SliceStable(products, func(i int, j int) bool {

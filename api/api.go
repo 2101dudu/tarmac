@@ -211,8 +211,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 				// check if product is outdated
 				existing, outdated := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", prodCode)
 				if existing != nil && !outdated {
-					log.Println("Already existing product:", prodCode) // temp
-					continue                                           // fresh, skip
+					continue // fresh, skip
 				}
 				db.RefreshDB(a.DBService, "product_index", prodCode, product)
 				log.Println("Refreshed product:", prodCode) // temp
