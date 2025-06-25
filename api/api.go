@@ -132,17 +132,33 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		return
 	}
 
-	// Extract special fields
+	// Extract sort fields
 	sortBy := ""
 	if val, ok := raw["SortBy"].(string); ok {
 		sortBy = val
-		delete(raw, "SortBy") // remove to avoid polluting wsdl struct
+		delete(raw, "SortBy")
 	}
 
 	sortOrder := ""
 	if val, ok := raw["SortOrder"].(string); ok {
 		sortOrder = val
 		delete(raw, "SortOrder")
+	}
+
+	priceFrom, priceTo, days := "", "", ""
+
+	// Extract filter fields
+	if val, ok := raw["PriceFrom"].(string); ok {
+		priceFrom = val
+		delete(raw, "PriceFrom")
+	}
+	if val, ok := raw["PriceTo"].(string); ok {
+		priceTo = val
+		delete(raw, "PriceTo")
+	}
+	if val, ok := raw["NumDays"].(string); ok {
+		days = val
+		delete(raw, "NumDays")
 	}
 
 	// Marshal back only the relevant search fields for the WSDL
@@ -227,6 +243,10 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 
 	if sortBy != "" {
 		data.ProductArray.Items = helper.SortProducts(data.ProductArray.Items, sortBy, sortOrder)
+	}
+
+	if priceFrom != "" || priceTo != "" || days != "" {
+		data.ProductArray.Items = helper.FilterProducts(data.ProductArray.Items, priceFrom, priceTo, days)
 	}
 
 	// Page token for pagination

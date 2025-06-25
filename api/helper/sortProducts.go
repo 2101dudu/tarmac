@@ -2,6 +2,7 @@ package helper
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"tarmac/wsdl"
 )
@@ -52,4 +53,52 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 	}
 
 	return products
+}
+
+func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) []*wsdl.Product {
+	if len(products) == 0 {
+		return products
+	}
+	var priceFromf, priceTof *float64 = nil, nil
+	if priceFrom != "" {
+		priceFromf = atof(priceFrom)
+	}
+	if priceTo != "" {
+		priceTof = atof(priceTo)
+	}
+	daysI, _ := strconv.Atoi(days)
+
+	var filtered []*wsdl.Product
+
+	for _, p := range products {
+		if p == nil {
+			continue
+		}
+
+		// Check price filters
+		if p.PriceFrom != nil {
+			price := atof(*p.PriceFrom)
+			if price == nil {
+				continue
+			}
+			if priceFrom != "" && *price < *priceFromf {
+				continue
+			}
+			if priceTo != "" && *price > *priceTof {
+				continue
+			}
+		}
+
+		// Check days filter
+		if days != "" && p.BaseDays != nil {
+			n, err := strconv.Atoi(*p.BaseDays)
+			if err != nil || n != daysI {
+				continue
+			}
+		}
+
+		filtered = append(filtered, p)
+	}
+
+	return filtered
 }
