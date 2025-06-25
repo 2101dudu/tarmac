@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/go-redis/redis"
@@ -33,6 +34,7 @@ type Api struct {
 func (a *Api) Start() {
 	engine := gin.Default()
 	engine.SetTrustedProxies(nil)
+	engine.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://192.168.1.120:3000"},
@@ -230,7 +232,12 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	// Page token for pagination
 	token := generateToken()
 	if jsonData, err := goccyjson.Marshal(data); err == nil {
-		a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime)
+		go func() {
+			err := a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime).Err()
+			if err != nil {
+				log.Println("Failed to set cache page:", err)
+			}
+		}()
 	}
 
 	// Slice to first 24
