@@ -2,14 +2,15 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"tarmac/api/helper"
 	"tarmac/cache"
 	"tarmac/db"
 	"tarmac/env"
+	"tarmac/logger"
 	"tarmac/wsdl"
 	"time"
 
@@ -53,6 +54,10 @@ func (a *Api) Start() {
 	engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
 	engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 
+	//========================================================================
+	engine.POST("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
+	//========================================================================
+
 	engine.Run(":8080")
 }
 
@@ -75,13 +80,10 @@ func (a *Api) handleGetMasterData(c *gin.Context) {
 		return
 	}
 
-	if refreshDB {
-		go db.RefreshDB(a.DBService, collectionName, id, data)
-	}
-
-	if refreshCache {
-		go cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService)
-	}
+	maybeRefreshDBAndCache(refreshDB, refreshCache,
+		func() { db.RefreshDB(a.DBService, collectionName, id, data) },
+		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
+	)
 
 	c.JSON(http.StatusOK, data)
 }
@@ -105,13 +107,10 @@ func (a *Api) handleSearchProduct(c *gin.Context) {
 		return
 	}
 
-	if refreshDB {
-		go db.RefreshDB(a.DBService, collectionName, id, data)
-	}
-
-	if refreshCache {
-		go cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService)
-	}
+	maybeRefreshDBAndCache(refreshDB, refreshCache,
+		func() { db.RefreshDB(a.DBService, collectionName, id, data) },
+		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
+	)
 
 	c.JSON(http.StatusOK, data)
 }
@@ -123,7 +122,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body"})
 		return
 	}
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(body)) // reset for re-read if needed
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// Unmarshal to generic map
 	var raw map[string]any
@@ -132,34 +131,14 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		return
 	}
 
-	// Extract sort fields
-	sortBy := ""
-	if val, ok := raw["SortBy"].(string); ok {
-		sortBy = val
-		delete(raw, "SortBy")
-	}
+	// sort
+	sortBy := extractStringField(raw, "SortBy")
+	sortOrder := extractStringField(raw, "SortOrder")
 
-	sortOrder := ""
-	if val, ok := raw["SortOrder"].(string); ok {
-		sortOrder = val
-		delete(raw, "SortOrder")
-	}
-
-	priceFrom, priceTo, days := "", "", ""
-
-	// Extract filter fields
-	if val, ok := raw["PriceFrom"].(string); ok {
-		priceFrom = val
-		delete(raw, "PriceFrom")
-	}
-	if val, ok := raw["PriceTo"].(string); ok {
-		priceTo = val
-		delete(raw, "PriceTo")
-	}
-	if val, ok := raw["NumDays"].(string); ok {
-		days = val
-		delete(raw, "NumDays")
-	}
+	// filter
+	priceFrom := extractStringField(raw, "PriceFrom")
+	priceTo := extractStringField(raw, "PriceTo")
+	days := extractStringField(raw, "NumDays")
 
 	// Marshal back only the relevant search fields for the WSDL
 	cleanBody, err := goccyjson.Marshal(raw)
@@ -216,7 +195,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 
 			for _, product := range data.ProductArray.Items { // refresh every single product entry from the listing
 				if product.Code == nil {
-					log.Println("Internal ERROR: product code is empty") // temp
+					logger.Log.Log("Internal ERROR: product code is empty") // temp
 					continue
 				}
 				prodCodeInt, err := strconv.Atoi(*product.Code)
@@ -232,7 +211,6 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 					continue // fresh, skip
 				}
 				db.RefreshDB(a.DBService, "product_index", prodCode, product)
-				log.Println("Refreshed product:", prodCode) // temp
 			}
 		}()
 	}
@@ -255,7 +233,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		go func() {
 			err := a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime).Err()
 			if err != nil {
-				log.Println("Failed to set cache page:", err)
+				logger.Log.Log("Failed to set cache page:", err)
 			}
 		}()
 	}
@@ -274,24 +252,9 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 }
 
 func (a *Api) handleSearchProductPagination(c *gin.Context) {
-	token := c.Query("token")
-	cursorStr := c.Query("cursor")
-	limitStr := c.Query("limit")
-
-	if token == "" || cursorStr == "" || limitStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing token, cursor or limit query parameter"})
-		return
-	}
-
-	cursor, err := strconv.Atoi(cursorStr)
-	if err != nil || cursor < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cursor"})
-		return
-	}
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit"})
+	token, cursor, limit, err := parsePaginationParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -347,21 +310,22 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	collectionName := "dyn_product_parameters"
 	id := prodCode
 
-	type productWithDescription struct {
+	type productWithExtradData struct {
 		Data             wsdl.DynProductParametersResponse `json:"data"`
 		DescriptionArray wsdl.TextContentArray             `json:"descriptionArray"`
 		PhotoArray       wsdl.PhotoArray                   `json:"photoArray"`
+		Price            string                            `json:"price"`
 	}
 
 	// Check cache first
-	cachedData := cache.CheckCacheHit[productWithDescription](cacheKey, a.CacheService)
+	cachedData := cache.CheckCacheHit[productWithExtradData](cacheKey, a.CacheService)
 	if cachedData != nil {
 		c.JSON(http.StatusOK, *cachedData)
 		return
 	}
 
 	// Check DB next
-	dbData, refreshDB := db.CheckDBHit[productWithDescription](a.DBService, collectionName, id)
+	dbData, refreshDB := db.CheckDBHit[productWithExtradData](a.DBService, collectionName, id)
 	if dbData != nil {
 		go cache.RefreshCache(dbData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
 		c.JSON(http.StatusOK, *dbData)
@@ -387,23 +351,15 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 
 	if product == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No product"})
-		log.Println("[WARNING] No product:", prodCode)
+		logger.Log.Log("[WARNING] No product:", prodCode)
 		return
 	}
-	var arr wsdl.TextContentArray
-	if product.TextContentsArray != nil {
-		arr = *product.TextContentsArray
-	}
 
-	var photos wsdl.PhotoArray
-	if product.PhotoArray != nil {
-		photos = *product.PhotoArray
-	}
-
-	fullData := productWithDescription{
+	fullData := productWithExtradData{
 		Data:             *data,
-		DescriptionArray: arr,
-		PhotoArray:       photos,
+		DescriptionArray: extractPointer(product.TextContentsArray),
+		PhotoArray:       extractPointer(product.PhotoArray),
+		Price:            extractPointer(product.PriceFrom),
 	}
 
 	go db.RefreshDB(a.DBService, collectionName, id, fullData)
@@ -486,6 +442,7 @@ func (a *Api) handleDynGetSimulation(c *gin.Context) {
 
 // just handles cache + DB + fetch. returns (data, refreshDB, refreshCache, error)
 func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func() (T, error)) (T, bool, bool, error) {
+	defer logger.Log.TrackTime()()
 	var empty T
 
 	// Check cache first
@@ -498,7 +455,7 @@ func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func(
 	dbData, outdated := db.CheckDBHit[T](a.DBService, collectionName, id)
 	if dbData != nil {
 		if outdated {
-			log.Println()
+			logger.Log.Log("Outdated DB data")
 		}
 		return *dbData, outdated, true, nil
 	}
@@ -510,4 +467,67 @@ func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func(
 	}
 
 	return newData, true, true, nil
+}
+
+func maybeRefreshDBAndCache(refreshDB, refreshCache bool, dbFunc func(), cacheFunc func()) {
+	if refreshDB {
+		go dbFunc()
+	}
+	if refreshCache {
+		go cacheFunc()
+	}
+}
+
+func parsePaginationParams(c *gin.Context) (token string, cursor, limit int, err error) {
+	token = c.Query("token")
+	cursorStr := c.Query("cursor")
+	limitStr := c.Query("limit")
+
+	if token == "" || cursorStr == "" || limitStr == "" {
+		err = errors.New("Missing token, cursor or limit query parameter")
+		return
+	}
+
+	cursor, err = strconv.Atoi(cursorStr)
+	if err != nil || cursor < 0 {
+		err = errors.New("Invalid cursor")
+		return
+	}
+
+	limit, err = strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		err = errors.New("Invalid limit")
+		return
+	}
+
+	return
+}
+
+func (a *Api) handleResetState(c *gin.Context) {
+	go func() {
+		// Flush Redis
+		if err := a.CacheService.FlushAll().Err(); err != nil {
+			logger.Log.Log("Failed to flush Redis:", err)
+		} else {
+			logger.Log.Log("Redis cache cleared")
+		}
+	}()
+
+	go func() {
+		// Drop all MongoDB collections in your DB (be careful)
+		collections, err := a.DBService.Database("tarmac").ListCollectionNames(c, struct{}{})
+		if err != nil {
+			logger.Log.Log("Failed to list Mongo collections:", err)
+			return
+		}
+		for _, col := range collections {
+			if err := a.DBService.Database("tarmac").Collection(col).Drop(c); err != nil {
+				logger.Log.Log("Failed to drop collection "+col+":", err)
+			} else {
+				logger.Log.Log("Dropped collection:", col)
+			}
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"status": "reset initiated"})
 }

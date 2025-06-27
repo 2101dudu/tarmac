@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"tarmac/json"
+	"tarmac/logger"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -15,7 +16,8 @@ type SOAPStore struct {
 	FetchedAt time.Time `bson:"fetched_at"`
 }
 
-func storeData(collection *mongo.Collection, collectionName string, id string, data any) error {
+func storeData(collection *mongo.Collection, id string, data any) error {
+	defer logger.Log.TrackTime()()
 	compressedData, err := json.Compress(data)
 	if err != nil {
 		return err
@@ -37,7 +39,8 @@ func storeData(collection *mongo.Collection, collectionName string, id string, d
 	return err
 }
 
-func loadData(collection *mongo.Collection, collectionName string, id string) (SOAPStore, error) {
+func loadData(collection *mongo.Collection, id string) (SOAPStore, error) {
+	defer logger.Log.TrackTime()()
 	var result SOAPStore
 	err := collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(&result)
 	return result, err

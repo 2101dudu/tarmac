@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"tarmac/json"
+	"tarmac/logger"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -45,27 +46,30 @@ func returnCollectionPointer(dbClient *mongo.Client, collection string) *mongo.C
 }
 
 func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string) (*T, bool) {
+	defer logger.Log.TrackTime()()
+
 	collection := returnCollectionPointer(dbClient, collectionName)
-	soapStore, err := loadData(collection, collectionName, id)
+	soapStore, err := loadData(collection, id)
 	if err == mongo.ErrNoDocuments {
-		log.Println("No DB Hit for", collectionName)
+		logger.Log.Log("No DB Hit for", collectionName)
 		return nil, false
 	}
-	log.Println("DB Hit for", collectionName)
+	logger.Log.Log("DB Hit for", collectionName)
 	uncompressedData, err := json.Uncompress[T](soapStore.Payload)
 	if err != nil {
-		log.Println("Error uncompressing json:", err)
+		logger.Log.Log("Error uncompressing json:", err)
 		return nil, false
 	}
 	return uncompressedData, time.Since(soapStore.FetchedAt) > 24*time.Hour
 }
 
 func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data any) {
+	defer logger.Log.TrackTime()()
 	collection := returnCollectionPointer(dbClient, collectionName)
-	err := storeData(collection, collectionName, id, data)
+	err := storeData(collection, id, data)
 	if err != nil {
-		log.Println("Failed DB refresh:", err)
+		logger.Log.Log("Failed DB refresh: ", err)
 	} else {
-		log.Println("DB refreshed for", collectionName)
+		logger.Log.Log("DB refreshed for: ", collectionName)
 	}
 }

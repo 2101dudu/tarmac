@@ -29,10 +29,15 @@ type Endpoints struct {
 	DBEndpoint    string
 }
 
+type Logs struct {
+	FilePath string
+}
+
 type Vars struct {
 	Credentials *Credentials
 	CacheTimes  *CacheTimes
 	Endpoints   *Endpoints
+	Logs        *Logs
 }
 
 func loadCacheTimes() *CacheTimes {
@@ -73,6 +78,12 @@ func loadEndpoints() *Endpoints {
 	}
 }
 
+func loadLogs() *Logs {
+	return &Logs{
+		FilePath: os.Getenv("LOG_FILE_PATH"),
+	}
+}
+
 func LoadEnvFile() Vars {
 	err := godotenv.Load()
 	if err != nil {
@@ -82,5 +93,6 @@ func LoadEnvFile() Vars {
 		CacheTimes:  loadCacheTimes(),
 		Credentials: loadCredentials(),
 		Endpoints:   loadEndpoints(),
+		Logs:        loadLogs(),
 	}
 }

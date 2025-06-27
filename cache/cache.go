@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"log"
+	"tarmac/logger"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -20,22 +20,24 @@ func Start(db *Client) *redis.Client {
 }
 
 func CheckCacheHit[T any](key string, db *redis.Client) *T {
+	defer logger.Log.TrackTime()()
 	data, err := loadJSON[T](key, db)
 	if err != nil {
-		log.Println("Failed cache check:", err)
+		logger.Log.Log("Failed cache check:", err)
 	} else if data == nil {
-		log.Println("No Cache Hit")
+		logger.Log.Log("No Cache Hit")
 	} else {
-		log.Println("Cache Hit!")
+		logger.Log.Log("Cache Hit!")
 	}
 	return data
 }
 
 func RefreshCache(data any, key string, ttl time.Duration, db *redis.Client) {
+	defer logger.Log.TrackTime()()
 	err := storeJSON(data, key, ttl, db)
 	if err != nil {
-		log.Println("Failed cache refresh:", err)
+		logger.Log.Log("Failed cache refresh:", err)
 	} else {
-		log.Println("Cache refreshed")
+		logger.Log.Log("Cache refreshed")
 	}
 }
