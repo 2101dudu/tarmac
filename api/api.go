@@ -6,13 +6,13 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"tarmac/api/cronjob"
 	"tarmac/api/helper"
 	"tarmac/cache"
 	"tarmac/db"
 	"tarmac/env"
 	"tarmac/logger"
 	"tarmac/wsdl"
-	"time"
 
 	goccyjson "github.com/goccy/go-json"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -22,6 +22,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/go-redis/redis"
+	"github.com/robfig/cron/v3"
 )
 
 type Api struct {
@@ -56,6 +57,16 @@ func (a *Api) Start() {
 
 	//========================================================================
 	engine.POST("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
+	//========================================================================
+
+	//========================================================================
+	engine.POST("api/admin/sync/products", a.handleSyncAllProducts) // CRON JOB
+
+	c := cron.New()
+	c.AddFunc("0 */6 * * *", func() {
+		_ = cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
+	})
+	c.Start()
 	//========================================================================
 
 	engine.Run(":8080")
@@ -132,6 +143,10 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	}
 
 	// sort
+	country := extractStringField(raw, "Country")
+	location := extractStringField(raw, "Location")
+	depDate := extractStringField(raw, "DepDate")
+
 	sortBy := extractStringField(raw, "SortBy")
 	sortOrder := extractStringField(raw, "SortOrder")
 
@@ -140,106 +155,78 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	priceTo := extractStringField(raw, "PriceTo")
 	days := extractStringField(raw, "NumDays")
 
-	// Marshal back only the relevant search fields for the WSDL
-	cleanBody, err := goccyjson.Marshal(raw)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process input"})
-		return
-	}
-
-	// Now unmarshal into your actual WSDL struct
-	var input wsdl.SearchProductRequest
-	if err := goccyjson.Unmarshal(cleanBody, &input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input for WSDL: " + err.Error()})
-		return
-	}
-	input.Credentials = a.Credentials
-
-	// Normalize dep date
-	if input.DepDate != nil {
-		// convert strings like "2025-01-09" and "2025-1-9" into
-		// the same format, to avoid differnt hash values for the same
-		// query
-		if canonicalizedDate, err := time.Parse(time.DateOnly, *input.DepDate); err == nil {
-			*input.DepDate = canonicalizedDate.String()
-		}
-	}
-
 	// Hash using re-marshaled cleanBody
-	key := getSHA256Hash(c.Request.URL.Path + string(cleanBody))
+	key := getSHA256Hash(c.Request.URL.Path + country + location + depDate)
 	collectionName := "search_product_with_body"
 	id := key
 
-	// Cache + DB dance
-	data, refreshDB, refreshCache, err := getData(
-		a, key, collectionName, id,
-		func() (*wsdl.SearchProductResponse, error) {
-			return a.SoapService.SearchProducts(&input)
-		},
-	)
+	var queriedList []*wsdl.Product
+	refreshDB := false
 
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	// Check cache first
+	cachedData := cache.CheckCacheHit[wsdl.SearchProductResponse](key, a.CacheService)
+	if cachedData != nil {
+		queriedList = cachedData.ProductArray.Items
+	} else {
+		// Check DB next
+		dbData, _ := db.CheckDBHit[wsdl.SearchProductResponse](a.DBService, collectionName, id)
+		if dbData != nil {
+			go cache.RefreshCache(dbData, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+			queriedList = dbData.ProductArray.Items
+		} else {
+			refreshDB = true
+			// Not in cache or DB, create new list from DB
+			logger.Log.Log("Falling back to full DB search")
+			productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
+			if dbErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
+				return
+			}
+
+			queriedList = helper.ApplyQueryToData(productList, country, location, depDate)
+		}
 	}
 
-	err = helper.OptimizeProductSearch(data)
+	if priceFrom != "" || priceTo != "" || days != "" {
+		queriedList = helper.FilterProducts(queriedList, priceFrom, priceTo, days)
+	}
+	if sortBy != "" {
+		queriedList = helper.SortProducts(queriedList, sortBy, sortOrder)
+	}
+	size := len(queriedList)
+	totalProducts := strconv.Itoa(size)
+
+	response := &wsdl.SearchProductResponse{
+		TotalProducts: &totalProducts,
+		ProductArray:  &wsdl.ProductArray{Items: queriedList},
+	}
+
+	err = helper.OptimizeProductSearch(response)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to optimize product search: " + err.Error()})
 		return
 	}
 
 	if refreshDB {
-		go func() { // avoid concurrency in mongoDB
-			db.RefreshDB(a.DBService, collectionName, id, data)
-
-			for _, product := range data.ProductArray.Items { // refresh every single product entry from the listing
-				if product.Code == nil {
-					logger.Log.Log("Internal ERROR: product code is empty") // temp
-					continue
-				}
-				prodCodeInt, err := strconv.Atoi(*product.Code)
-				if err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
-					return
-				}
-				prodCode := strconv.Itoa(prodCodeInt)
-
-				// check if product is outdated
-				existing, outdated := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", prodCode)
-				if existing != nil && !outdated {
-					continue // fresh, skip
-				}
-				db.RefreshDB(a.DBService, "product_index", prodCode, product)
-			}
+		go func() {
+			db.RefreshDB(a.DBService, collectionName, id, response)
+			cache.RefreshCache(response, key, *a.CacheTimes.LongCacheTime, a.CacheService)
 		}()
-	}
-
-	if refreshCache {
-		go cache.RefreshCache(data, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
-	}
-
-	if sortBy != "" {
-		data.ProductArray.Items = helper.SortProducts(data.ProductArray.Items, sortBy, sortOrder)
-	}
-
-	if priceFrom != "" || priceTo != "" || days != "" {
-		data.ProductArray.Items = helper.FilterProducts(data.ProductArray.Items, priceFrom, priceTo, days)
 	}
 
 	// Page token for pagination
 	token := generateToken()
-	if jsonData, err := goccyjson.Marshal(data); err == nil {
-		go func() {
+	go func() {
+		if jsonData, err := goccyjson.Marshal(response); err == nil {
 			err := a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime).Err()
 			if err != nil {
 				logger.Log.Log("Failed to set cache page:", err)
 			}
-		}()
-	}
+		}
+	}()
 
 	// Slice to first 24
-	firstPage := data.ProductArray.Items
+	firstPage := response.ProductArray.Items
 	if len(firstPage) > 24 {
 		firstPage = firstPage[:24]
 	}
@@ -247,7 +234,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"products": firstPage,
 		"token":    token,
-		"hasMore":  len(data.ProductArray.Items) > 24,
+		"hasMore":  len(response.ProductArray.Items) > 24,
 	})
 }
 
@@ -530,4 +517,13 @@ func (a *Api) handleResetState(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": "reset initiated"})
+}
+
+func (a *Api) handleSyncAllProducts(c *gin.Context) {
+	err := cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Product sync started."})
 }

@@ -4,10 +4,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"tarmac/logger"
 	"tarmac/wsdl"
+	"time"
 )
 
 func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Product {
+	defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
 	}
@@ -56,6 +59,7 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 }
 
 func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) []*wsdl.Product {
+	defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
 	}
@@ -101,4 +105,59 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 	}
 
 	return filtered
+}
+
+func ApplyQueryToData(products []*wsdl.Product, country, location, dateFrom string) []*wsdl.Product {
+	defer logger.Log.TrackTime()()
+
+	var canonicalizedDate time.Time
+
+	// Normalize dep date
+	if dateFrom != "" {
+		// convert strings like "2025-1-9" into "2025-01-09"
+		// to avoid differnt hash values for the same query
+		canonicalizedDate, _ = time.Parse(time.DateOnly, dateFrom)
+	}
+
+	var queried []*wsdl.Product
+
+	for _, product := range products {
+		if product == nil {
+			continue
+		}
+		match := true
+		if country != "" {
+			if product.Country == nil || *product.Country != country {
+				match = false
+			}
+		}
+		if location != "" {
+			if product.Location == nil || *product.Location != location {
+				match = false
+			}
+		}
+		if dateFrom != "" {
+			if product.OperationFrom == nil || product.OperationTo == nil {
+				match = false
+			} else {
+				// Parse the dates as time.Time for accurate comparison
+				layout := time.DateOnly
+				of, err2 := time.Parse(layout, *product.OperationFrom)
+				ot, err3 := time.Parse(layout, *product.OperationTo)
+				if err2 != nil || err3 != nil {
+					match = false
+				} else if canonicalizedDate.Before(of) || canonicalizedDate.After(ot) {
+					match = false
+				}
+			}
+
+		}
+		if match {
+			queried = append(queried, product)
+		}
+	}
+
+	logger.Log.Log("Filtered products. Now have ", len(queried), " products")
+
+	return queried
 }
