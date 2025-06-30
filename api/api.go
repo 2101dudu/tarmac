@@ -51,6 +51,7 @@ func (a *Api) Start() {
 	engine.GET("api/search/product/page", a.handleSearchProductPagination)
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
+	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
 	engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
 	engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
@@ -163,28 +164,23 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	var queriedList []*wsdl.Product
 	refreshDB := false
 
-	// Check cache first
-	cachedData := cache.CheckCacheHit[wsdl.SearchProductResponse](key, a.CacheService)
-	if cachedData != nil {
-		queriedList = cachedData.ProductArray.Items
+	// Try cache first
+	if cached := cache.CheckCacheHit[wsdl.SearchProductResponse](key, a.CacheService); cached != nil {
+		queriedList = cached.ProductArray.Items
+	} else if dbData, _ := db.CheckDBHit[wsdl.SearchProductResponse](a.DBService, collectionName, id); dbData != nil {
+		// Fallback to DB if not in cache
+		go cache.RefreshCache(dbData, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+		queriedList = dbData.ProductArray.Items
 	} else {
-		// Check DB next
-		dbData, _ := db.CheckDBHit[wsdl.SearchProductResponse](a.DBService, collectionName, id)
-		if dbData != nil {
-			go cache.RefreshCache(dbData, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
-			queriedList = dbData.ProductArray.Items
-		} else {
-			refreshDB = true
-			// Not in cache or DB, create new list from DB
-			logger.Log.Log("Falling back to full DB search")
-			productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
-			if dbErr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
-				return
-			}
-
-			queriedList = helper.ApplyQueryToData(productList, country, location, depDate)
+		// Fallback to full DB search if not in cache or DB
+		refreshDB = true
+		logger.Log.Log("Falling back to full DB search")
+		productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
+		if dbErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
+			return
 		}
+		queriedList = helper.ApplyQueryToData(productList, country, location, depDate)
 	}
 
 	if priceFrom != "" || priceTo != "" || days != "" {
@@ -326,11 +322,12 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 		Credentials: a.Credentials,
 		Productcode: &prodCode,
 	})
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	*data.Name = helper.SimplifyString(*data.Name)
 
 	// TODO: check if "outdated" matters...
 	// ...., outdated := ...
@@ -364,13 +361,60 @@ func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
 	}
 
 	input.Credentials = a.Credentials
-	resp, err := a.SoapService.DynSearchProductAvailableServices(&input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	searchId := generateToken()
+	cacheKey := "asyncsearch:" + searchId
+
+	// Save status as "processing"
+	cache.RefreshCache("processing", cacheKey+":status", *a.CacheTimes.ShortCacheTime, a.CacheService)
+
+	// Spawn goroutine to call SOAP
+	go func() {
+		resp, err := a.SoapService.DynSearchProductAvailableServices(&input)
+		if err != nil {
+			logger.Log.Log("Async search failed:", err)
+			cache.RefreshCache("error", cacheKey+":status", *a.CacheTimes.ShortCacheTime, a.CacheService)
+			return
+		}
+
+		cache.RefreshCache(resp, cacheKey+":data", *a.CacheTimes.MediumCacheTime, a.CacheService)
+		cache.RefreshCache("done", cacheKey+":status", *a.CacheTimes.MediumCacheTime, a.CacheService)
+	}()
+
+	// Return searchId immediately
+	c.JSON(http.StatusOK, gin.H{"searchId": searchId})
+}
+
+func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
+	searchId := c.Query("id")
+	if searchId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing search ID"})
 		return
 	}
 
-	c.Render(http.StatusOK, render.JSON{Data: resp})
+	statusKey := "asyncsearch:" + searchId + ":status"
+	dataKey := "asyncsearch:" + searchId + ":data"
+
+	status := cache.CheckCacheHit[string](statusKey, a.CacheService)
+	if status == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Search ID not found"})
+		return
+	}
+
+	if *status != "done" {
+		c.JSON(http.StatusOK, gin.H{"status": status})
+		return
+	}
+
+	resp := cache.CheckCacheHit[wsdl.DynProductAvailableServicesResponse](dataKey, a.CacheService)
+	if resp == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Corrupted result"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "done",
+		"data":   resp,
+	})
 }
 
 func (a *Api) handleDynSetServicesSelected(c *gin.Context) {

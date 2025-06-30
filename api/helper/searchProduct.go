@@ -22,6 +22,10 @@ func trimPrefix(s string) string {
 	return re.ReplaceAllString(s, "")
 }
 
+func SimplifyString(s string) string {
+	return trimEmojis(trimPrefix(s))
+}
+
 func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 	totalProducts, err := strconv.Atoi(*res.TotalProducts)
 	if err != nil {
@@ -43,7 +47,7 @@ func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 			continue
 		}
 
-		*product.Name = trimEmojis(trimPrefix(*product.Name))
+		*product.Name = SimplifyString(*product.Name)
 
 		product.Continent = nil
 		product.Country = nil

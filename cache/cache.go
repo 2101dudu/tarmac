@@ -12,16 +12,16 @@ type Client struct {
 	// ...
 }
 
-func Start(db *Client) *redis.Client {
+func Start(cache *Client) *redis.Client {
 	client := redis.NewClient(&redis.Options{
-		Addr: db.Addr,
+		Addr: cache.Addr,
 	})
 	return client
 }
 
-func CheckCacheHit[T any](key string, db *redis.Client) *T {
+func CheckCacheHit[T any](key string, cache *redis.Client) *T {
 	defer logger.Log.TrackTime()()
-	data, err := loadJSON[T](key, db)
+	data, err := loadJSON[T](key, cache)
 	if err != nil {
 		logger.Log.Log("Failed cache check:", err)
 	} else if data == nil {
@@ -32,9 +32,9 @@ func CheckCacheHit[T any](key string, db *redis.Client) *T {
 	return data
 }
 
-func RefreshCache(data any, key string, ttl time.Duration, db *redis.Client) {
+func RefreshCache(data any, key string, ttl time.Duration, cache *redis.Client) {
 	defer logger.Log.TrackTime()()
-	err := storeJSON(data, key, ttl, db)
+	err := storeJSON(data, key, ttl, cache)
 	if err != nil {
 		logger.Log.Log("Failed cache refresh:", err)
 	} else {
