@@ -47,7 +47,7 @@ func returnCollectionPointer(dbClient *mongo.Client, collection string) *mongo.C
 }
 
 func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string) (*T, bool) {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 
 	collection := returnCollectionPointer(dbClient, collectionName)
 	soapStore, err := loadData(collection, id)
@@ -63,7 +63,7 @@ func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string)
 }
 
 func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data any) {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	collection := returnCollectionPointer(dbClient, collectionName)
 	err := storeData(collection, id, data)
 	if err != nil {
@@ -74,7 +74,7 @@ func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data an
 }
 
 func GetAllProducts[T any](dbClient *mongo.Client, collectionName string) ([]*T, error) {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	collection := returnCollectionPointer(dbClient, collectionName)
 	cursor, err := collection.Find(context.TODO(), bson.M{})
 	if err != nil {

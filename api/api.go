@@ -473,7 +473,7 @@ func (a *Api) handleDynGetSimulation(c *gin.Context) {
 
 // just handles cache + DB + fetch. returns (data, refreshDB, refreshCache, error)
 func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func() (T, error)) (T, bool, bool, error) {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	var empty T
 
 	// Check cache first

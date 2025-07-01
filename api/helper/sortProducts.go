@@ -10,7 +10,7 @@ import (
 )
 
 func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Product {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
 	}
@@ -59,7 +59,7 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 }
 
 func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) []*wsdl.Product {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
 	}
@@ -108,7 +108,7 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 }
 
 func ApplyQueryToData(products []*wsdl.Product, country, location, dateFrom string) []*wsdl.Product {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 
 	var canonicalizedDate time.Time
 

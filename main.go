@@ -27,7 +27,7 @@ func main() {
 	dbService := db.Start(&dbClient)
 
 	logger.Start(vars.Logs.FilePath, true) // temp, change to flag system
-	defer logger.Log.Close()
+	// defer logger.Log.Close()
 
 	api := api.Api{SoapService: soapService, Credentials: &wsdl.CredentialsStruct{
 		System:   &vars.Credentials.System,

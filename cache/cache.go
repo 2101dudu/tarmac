@@ -20,7 +20,7 @@ func Start(cache *Client) *redis.Client {
 }
 
 func CheckCacheHit[T any](key string, cache *redis.Client) *T {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	data, err := loadJSON[T](key, cache)
 	if err != nil {
 		logger.Log.Log("Failed cache check:", err)
@@ -33,7 +33,7 @@ func CheckCacheHit[T any](key string, cache *redis.Client) *T {
 }
 
 func RefreshCache(data any, key string, ttl time.Duration, cache *redis.Client) {
-	defer logger.Log.TrackTime()()
+	// defer logger.Log.TrackTime()()
 	err := storeJSON(data, key, ttl, cache)
 	if err != nil {
 		logger.Log.Log("Failed cache refresh:", err)
