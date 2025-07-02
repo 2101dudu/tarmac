@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"tarmac/api/cronjob"
 	"tarmac/api/helper"
 	"tarmac/cache"
@@ -26,11 +27,12 @@ import (
 )
 
 type Api struct {
-	SoapService  wsdl.Wbs_pkt_methodsSoap
-	Credentials  *wsdl.CredentialsStruct
-	CacheTimes   *env.CacheTimes
-	CacheService *redis.Client
-	DBService    *mongo.Client
+	SoapService         wsdl.Wbs_pkt_methodsSoap
+	Credentials         *wsdl.CredentialsStruct
+	CacheTimes          *env.CacheTimes
+	CacheService        *redis.Client
+	DBService           *mongo.Client
+	AdminHashedPassword string
 }
 
 func (a *Api) Start() {
@@ -41,7 +43,7 @@ func (a *Api) Start() {
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://192.168.1.120:3000"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
 	}))
 
@@ -55,6 +57,15 @@ func (a *Api) Start() {
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
 	engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
 	engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
+
+	//========================================================================
+	engine.POST("api/admin/auth", a.handleAdminAuth) // ADMIN ENDPOINT
+
+	admin := engine.Group("/api/admin")
+	admin.Use(a.AdminAuthMiddleware())
+	admin.GET("/products", a.handleListAllProducts)
+
+	//========================================================================
 
 	//========================================================================
 	engine.POST("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
@@ -536,7 +547,6 @@ func parsePaginationParams(c *gin.Context) (token string, cursor, limit int, err
 
 func (a *Api) handleResetState(c *gin.Context) {
 	go func() {
-		// Flush Redis
 		if err := a.CacheService.FlushAll().Err(); err != nil {
 			logger.Log.Log("Failed to flush Redis:", err)
 		} else {
@@ -545,7 +555,6 @@ func (a *Api) handleResetState(c *gin.Context) {
 	}()
 
 	go func() {
-		// Drop all MongoDB collections in your DB (be careful)
 		collections, err := a.DBService.Database("tarmac").ListCollectionNames(c, struct{}{})
 		if err != nil {
 			logger.Log.Log("Failed to list Mongo collections:", err)
@@ -570,4 +579,49 @@ func (a *Api) handleSyncAllProducts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Product sync started."})
+}
+
+func (a *Api) handleAdminAuth(c *gin.Context) {
+	var body struct{ Password string }
+	if err := c.BindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	expected := a.AdminHashedPassword
+	if getSHA256Hash(body.Password) != expected {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	token := generateToken()
+	go cache.RefreshCache("valid", "admin:"+token, *a.CacheTimes.MediumCacheTime, a.CacheService)
+
+	c.JSON(http.StatusOK, gin.H{"token": token})
+}
+
+func (a *Api) AdminAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		auth := c.GetHeader("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if storedToken := cache.CheckCacheHit[string]("admin:"+token, a.CacheService); *storedToken != "valid" {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.Next()
+	}
+}
+
+func (a *Api) handleListAllProducts(c *gin.Context) {
+	productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB failed: " + dbErr.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"list": productList})
 }

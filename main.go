@@ -34,7 +34,7 @@ func main() {
 		Client:   &vars.Credentials.Client,
 		Username: &vars.Credentials.Username,
 		Password: &vars.Credentials.Password,
-	}, CacheService: cacheService, CacheTimes: vars.CacheTimes, DBService: dbService}
+	}, CacheService: cacheService, CacheTimes: vars.CacheTimes, DBService: dbService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
 
 	api.Start()
 }

@@ -15,12 +15,13 @@ type CacheTimes struct {
 }
 
 type Credentials struct {
-	System     string
-	Client     string
-	Username   string
-	Password   string
-	DBUsername string
-	DBPassword string
+	System              string
+	Client              string
+	Username            string
+	Password            string
+	DBUsername          string
+	DBPassword          string
+	AdminHashedPassword string
 }
 
 type Endpoints struct {
@@ -61,12 +62,13 @@ func loadCacheTimes() *CacheTimes {
 
 func loadCredentials() *Credentials {
 	return &Credentials{
-		System:     os.Getenv("SYSTEM"),
-		Client:     os.Getenv("CLIENT"),
-		Username:   os.Getenv("USERNAME"),
-		Password:   os.Getenv("PASSWORD"),
-		DBUsername: os.Getenv("DB_USERNAME"),
-		DBPassword: os.Getenv("DB_PASSWORD"),
+		System:              os.Getenv("SYSTEM"),
+		Client:              os.Getenv("CLIENT"),
+		Username:            os.Getenv("USERNAME"),
+		Password:            os.Getenv("PASSWORD"),
+		DBUsername:          os.Getenv("DB_USERNAME"),
+		DBPassword:          os.Getenv("DB_PASSWORD"),
+		AdminHashedPassword: os.Getenv("ADMIN_HASHED_PASSWORD"),
 	}
 }
 
