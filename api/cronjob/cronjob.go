@@ -5,6 +5,7 @@ import (
 	"tarmac/db"
 	"tarmac/logger"
 	"tarmac/wsdl"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -15,8 +16,11 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 	countrySet := make(map[string]struct{})
 	locationSet := make(map[string]struct{})
 
+	depDateString := time.Now().Format(time.DateOnly)
+
 	resp, err := service.SearchProducts(&wsdl.SearchProductRequest{
 		Credentials: creds,
+		DepDate:     &depDateString,
 	})
 	if err != nil {
 		logger.Log.Log("Failed SOAP fetch: ", err)
