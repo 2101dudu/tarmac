@@ -703,7 +703,7 @@ func (a *Api) handleAddProductTags(c *gin.Context) {
 
 	go func() {
 		pWrapper, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
-		pWrapper.Tags = req.Tags
+		pWrapper.Tags = append(pWrapper.Tags, req.Tags...)
 		db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pWrapper)
 	}()
 
