@@ -13,8 +13,13 @@ import (
 func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsStruct, dbClient *mongo.Client) (error, []string, []string) {
 	logger.Log.Log("Starting full product sync...")
 
+	collectionName := "product_index"
+
 	countrySet := make(map[string]struct{})
 	locationSet := make(map[string]struct{})
+
+	// keep track of products coming from the SOAP API — delete outdated ones
+	seenProductCodes := make(map[string]bool)
 
 	depDateString := time.Now().Format(time.DateOnly)
 
@@ -42,7 +47,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		}
 
 		// get existing product and store its tags
-		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbClient, "product_index", codeStr)
+		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbClient, collectionName, codeStr)
 
 		tags := []string{}
 		enabled := true
@@ -58,7 +63,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		// wrap code into a struct with product-specific tags
 		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: tags, Enabled: &enabled}
 
-		db.RefreshDB(dbClient, "product_index", codeStr, productWrapper)
+		db.RefreshDB(dbClient, collectionName, codeStr, productWrapper)
 
 		// handle list of countries + locations
 		if product.Country != nil {
@@ -67,6 +72,8 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		if product.Location != nil {
 			locationSet[*product.Location] = struct{}{}
 		}
+
+		seenProductCodes[codeStr] = true
 	}
 
 	var countryCodes, locationCodes []string
@@ -75,6 +82,20 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 	}
 	for code := range locationSet {
 		locationCodes = append(locationCodes, code)
+	}
+
+	productsList, _ := db.GetAllProducts[wsdl.ProductWrapper](dbClient, collectionName)
+
+	for _, pW := range productsList {
+		if pW == nil || pW.Product.Code == nil {
+			continue
+		}
+		code := *pW.Product.Code
+		if _, found := seenProductCodes[code]; !found {
+			// delete product from DB
+			db.DeleteByID(dbClient, collectionName, code)
+			logger.Log.Log("Deleted stale product: ", code)
+		}
 	}
 
 	logger.Log.Log("Finished syncing ", len(resp.ProductArray.Items), " products.")

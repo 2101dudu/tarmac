@@ -105,3 +105,9 @@ func GetAllProducts[T any](dbClient *mongo.Client, collectionName string) ([]*T,
 
 	return products, nil
 }
+
+func DeleteByID(dbClient *mongo.Client, collectionName string, id string) error {
+	collection := returnCollectionPointer(dbClient, collectionName)
+	_, err := collection.DeleteOne(context.TODO(), bson.M{"_id": id})
+	return err
+}
