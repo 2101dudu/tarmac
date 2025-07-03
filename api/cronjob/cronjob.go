@@ -40,15 +40,19 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		// get existing product and store its tags
 		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbClient, "product_index", codeStr)
 
-		var tags []string
-		if oldProduct == nil || oldProduct.Tags == nil {
-			tags = []string{}
-		} else {
-			tags = oldProduct.Tags
+		tags := []string{}
+		enabled := true
+		if oldProduct != nil {
+			if oldProduct.Tags != nil {
+				tags = oldProduct.Tags
+			}
+			if oldProduct.Enabled != nil {
+				enabled = *oldProduct.Enabled
+			}
 		}
 
 		// wrap code into a struct with product-specific tags
-		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: tags}
+		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: tags, Enabled: &enabled}
 
 		db.RefreshDB(dbClient, "product_index", codeStr, productWrapper)
 

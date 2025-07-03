@@ -65,7 +65,8 @@ func (a *Api) Start() {
 	admin.Use(a.AdminAuthMiddleware())
 	admin.GET("/products", a.handleListAllProducts)
 	admin.POST("/products/:prodCode/tags", a.handleAddProductTags)
-	admin.POST("/products/:prodCode/tags/:optionToRemove", a.handleRemoveProductTags)
+	admin.POST("/products/:prodCode/disable", a.handleProductDisable)
+	admin.POST("/products/:prodCode/enable", a.handleProductEnable)
 
 	//========================================================================
 
@@ -739,4 +740,40 @@ func (a *Api) handleRemoveProductTags(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tag removed successfully"})
+}
+
+func (a *Api) handleProductDisable(c *gin.Context) {
+	prodCodeRaw := c.Param("prodCode")
+	_, err := strconv.Atoi(prodCodeRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
+		return
+	}
+
+	pW, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
+
+	// disable product
+	*pW.Enabled = false
+
+	db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pW)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product disabled successfully"})
+}
+
+func (a *Api) handleProductEnable(c *gin.Context) {
+	prodCodeRaw := c.Param("prodCode")
+	_, err := strconv.Atoi(prodCodeRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
+		return
+	}
+
+	pW, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
+
+	// disable product
+	*pW.Enabled = true
+
+	db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pW)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product enabled successfully"})
 }
