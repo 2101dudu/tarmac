@@ -64,7 +64,8 @@ func (a *Api) Start() {
 	admin := engine.Group("/api/admin")
 	admin.Use(a.AdminAuthMiddleware())
 	admin.GET("/products", a.handleListAllProducts)
-	admin.POST("/products/:prodCode/tags", a.handleAddProductTags)
+	admin.POST("/products/:prodCode/tags/add", a.handleAddProductTags)
+	admin.GET("/products/:prodCode/tags/remove/:optionToRemove", a.handleRemoveProductTags)
 	admin.POST("/products/:prodCode/disable", a.handleProductDisable)
 	admin.POST("/products/:prodCode/enable", a.handleProductEnable)
 

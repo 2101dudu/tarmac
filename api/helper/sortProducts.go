@@ -51,6 +51,12 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 			return *products[i].Name > *products[j].Name
 		})
 	// more sort types can be added here (e.g. popularity)
+	case "relevance":
+		if !ascending {
+			for i, j := 0, len(products)-1; i < j; i, j = i+1, j-1 {
+				products[i], products[j] = products[j], products[i]
+			}
+		}
 	default:
 		// No-op for unknown sort types
 	}
@@ -122,11 +128,11 @@ func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFr
 	var queried []*wsdl.Product
 
 	for _, productW := range products {
-		if productW == nil {
+		if productW == nil || productW.Enabled == nil || !*productW.Enabled {
 			continue
 		}
 
-		product := &productW.Product
+		product := productW.Product
 		match := true
 		if country != "" {
 			if product.Country == nil || *product.Country != country {
@@ -155,7 +161,7 @@ func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFr
 
 		}
 		if match {
-			queried = append(queried, product)
+			queried = append(queried, &product)
 		}
 	}
 
