@@ -78,7 +78,8 @@ func (a *Api) Start() {
 
 	c := cron.New()
 	c.AddFunc("0 */6 * * *", func() {
-		_ = cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
+		_, cc, lc := cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
+		a.helperFuncSyncAllProducts(cc, lc)
 	})
 	c.Start()
 	//========================================================================
@@ -570,16 +571,73 @@ func (a *Api) handleResetState(c *gin.Context) {
 		}
 	}()
 
-	c.JSON(http.StatusOK, gin.H{"status": "reset initiated"})
+	c.JSON(http.StatusOK, gin.H{"status": "reset concluded"})
 }
 
 func (a *Api) handleSyncAllProducts(c *gin.Context) {
-	err := cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
+	err, countryCodes, locationCodes := cronjob.SyncAllProducts(a.SoapService, a.Credentials, a.DBService)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Product sync started."})
+	a.helperFuncSyncAllProducts(countryCodes, locationCodes)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product sync ended."})
+}
+
+func (a *Api) helperFuncSyncAllProducts(countryCodes, locationCodes []string) {
+	collectionName := "master_data"
+	id := "master_data"
+	unusedKey := ""
+
+	masterData, _, _, err := getData(
+		a, unusedKey, collectionName, id,
+		func() (*wsdl.SearchProductMasterDataResponse, error) {
+			return a.SoapService.SearchProductMasterData(&wsdl.SearchProductMasterDataRequest{
+				Credentials: a.Credentials,
+			})
+		},
+	)
+
+	if err != nil {
+		return
+	}
+
+	countries := masterData.SearchProductMasterDataArray.CountriesArray.Items
+	locations := masterData.SearchProductMasterDataArray.LocationsArray.Items
+
+	newMasterData := &wsdl.SearchProductMasterDataResponse{
+		SearchProductMasterDataArray: &wsdl.SearchProductMasterData{
+			CountriesArray: &wsdl.CountryArray{Items: []*wsdl.Country{}},
+			LocationsArray: &wsdl.LocationArray{Items: []*wsdl.Location{}},
+		},
+	}
+
+	for _, countryCode := range countryCodes {
+		for _, country := range countries {
+			if country.Code != nil && *country.Code == countryCode {
+				newMasterData.SearchProductMasterDataArray.CountriesArray.Items = append(
+					newMasterData.SearchProductMasterDataArray.CountriesArray.Items,
+					country,
+				)
+				break
+			}
+		}
+	}
+
+	for _, locationCode := range locationCodes {
+		for _, location := range locations {
+			if location.Code != nil && *location.Code == locationCode {
+				newMasterData.SearchProductMasterDataArray.LocationsArray.Items = append(
+					newMasterData.SearchProductMasterDataArray.LocationsArray.Items,
+					location,
+				)
+				break
+			}
+		}
+	}
+
+	go db.RefreshDB(a.DBService, collectionName, id, newMasterData)
 }
 
 func (a *Api) handleAdminAuth(c *gin.Context) {
