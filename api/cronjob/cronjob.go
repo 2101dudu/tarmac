@@ -34,7 +34,17 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 			continue
 		}
 
-		db.RefreshDB(dbClient, "product_index", codeStr, product)
+		// get existing product and store its tags
+		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbClient, "product_index", codeStr)
+
+		if oldProduct.Tags == nil {
+			oldProduct.Tags = []string{}
+		}
+
+		// wrap code into a struct with product-specific tags
+		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: oldProduct.Tags}
+
+		db.RefreshDB(dbClient, "product_index", codeStr, productWrapper)
 	}
 
 	logger.Log.Log("Finished syncing ", len(resp.ProductArray.Items), " products.")

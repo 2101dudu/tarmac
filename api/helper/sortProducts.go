@@ -107,7 +107,7 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 	return filtered
 }
 
-func ApplyQueryToData(products []*wsdl.Product, country, location, dateFrom string) []*wsdl.Product {
+func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFrom string) []*wsdl.Product {
 	// defer logger.Log.TrackTime()()
 
 	var canonicalizedDate time.Time
@@ -121,10 +121,12 @@ func ApplyQueryToData(products []*wsdl.Product, country, location, dateFrom stri
 
 	var queried []*wsdl.Product
 
-	for _, product := range products {
-		if product == nil {
+	for _, productW := range products {
+		if productW == nil {
 			continue
 		}
+
+		product := &productW.Product
 		match := true
 		if country != "" {
 			if product.Country == nil || *product.Country != country {

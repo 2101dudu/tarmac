@@ -64,6 +64,8 @@ func (a *Api) Start() {
 	admin := engine.Group("/api/admin")
 	admin.Use(a.AdminAuthMiddleware())
 	admin.GET("/products", a.handleListAllProducts)
+	admin.POST("/products/:prodCode/tags", a.handleAddProductTags)
+	admin.POST("/products/:prodCode/tags/:optionToRemove", a.handleRemoveProductTags)
 
 	//========================================================================
 
@@ -72,7 +74,7 @@ func (a *Api) Start() {
 	//========================================================================
 
 	//========================================================================
-	engine.POST("api/admin/sync/products", a.handleSyncAllProducts) // CRON JOB
+	engine.GET("api/admin/sync/products", a.handleSyncAllProducts) // MANUAL CALL
 
 	c := cron.New()
 	c.AddFunc("0 */6 * * *", func() {
@@ -186,7 +188,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		// Fallback to full DB search if not in cache or DB
 		refreshDB = true
 		logger.Log.Log("Falling back to full DB search")
-		productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
+		productList, dbErr := db.GetAllProducts[wsdl.ProductWrapper](a.DBService, "product_index")
 		if dbErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
 			return
@@ -293,16 +295,15 @@ func (a *Api) handleSearchProductPagination(c *gin.Context) {
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	prodCodeRaw := c.Param("prodCode")
-	prodCodeInt, err := strconv.Atoi(prodCodeRaw)
+	_, err := strconv.Atoi(prodCodeRaw)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
 		return
 	}
-	prodCode := strconv.Itoa(prodCodeInt)
 
-	cacheKey := prodCode
+	cacheKey := prodCodeRaw
 	collectionName := "dyn_product_parameters"
-	id := prodCode
+	id := prodCodeRaw
 
 	type productWithExtradData struct {
 		Data             wsdl.DynProductParametersResponse `json:"data"`
@@ -331,7 +332,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	// Not in cache or DB, fetch data from API
 	data, err := a.SoapService.DynGetProductParameters(&wsdl.DynProductParametersRequest{
 		Credentials: a.Credentials,
-		Productcode: &prodCode,
+		Productcode: &prodCodeRaw,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -340,15 +341,15 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 
 	*data.Name = helper.SimplifyString(*data.Name)
 
-	// TODO: check if "outdated" matters...
-	// ...., outdated := ...
-	product, _ := db.CheckDBHit[wsdl.Product](a.DBService, "product_index", id)
+	productW, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", id)
 
-	if product == nil {
+	if productW == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No product"})
-		logger.Log.Log("[WARNING] No product:", prodCode)
+		logger.Log.Log("[WARNING] No product:", prodCodeRaw)
 		return
 	}
+
+	product := productW.Product
 
 	fullData := productWithExtradData{
 		Data:             *data,
@@ -617,11 +618,67 @@ func (a *Api) AdminAuthMiddleware() gin.HandlerFunc {
 }
 
 func (a *Api) handleListAllProducts(c *gin.Context) {
-	productList, dbErr := db.GetAllProducts[wsdl.Product](a.DBService, "product_index")
+	productList, dbErr := db.GetAllProducts[wsdl.ProductWrapper](a.DBService, "product_index")
 	if dbErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB failed: " + dbErr.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"list": productList})
+}
+
+func (a *Api) handleAddProductTags(c *gin.Context) {
+	prodCodeRaw := c.Param("prodCode")
+	_, err := strconv.Atoi(prodCodeRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
+		return
+	}
+
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	go func() {
+		pWrapper, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
+		pWrapper.Tags = req.Tags
+		db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pWrapper)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tags added successfully"})
+}
+
+func (a *Api) handleRemoveProductTags(c *gin.Context) {
+	prodCodeRaw := c.Param("prodCode")
+	_, err := strconv.Atoi(prodCodeRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Product code must be a number"})
+		return
+	}
+
+	optionToRemove := c.Param("optionToRemove")
+
+	if optionToRemove == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing option to remove"})
+		return
+	}
+
+	go func() {
+		pWrapper, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
+		// Remove optionToRemove from pWrapper.Tags
+		var newTags []string
+		for _, tag := range pWrapper.Tags {
+			if tag != optionToRemove {
+				newTags = append(newTags, tag)
+			}
+		}
+		pWrapper.Tags = newTags
+		db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pWrapper)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tag removed successfully"})
 }
