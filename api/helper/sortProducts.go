@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,7 +114,7 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 	return filtered
 }
 
-func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFrom string) []*wsdl.Product {
+func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFrom, tagName string) []*wsdl.Product {
 	// defer logger.Log.TrackTime()()
 
 	var canonicalizedDate time.Time
@@ -159,6 +160,11 @@ func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFr
 				}
 			}
 
+		}
+		if tagName != "" {
+			if !slices.Contains(productW.Tags, tagName) {
+				match = false
+			}
 		}
 		if match {
 			queried = append(queried, &product)

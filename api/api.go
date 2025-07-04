@@ -50,6 +50,7 @@ func (a *Api) Start() {
 	engine.GET("api/get/master-data", a.handleGetMasterData)
 	engine.GET("api/search/product", a.handleSearchProduct)
 	engine.POST("api/search/product", a.handleSearchProductWithBody)
+	engine.GET("api/search/product/tags/:tagName", a.handleSearchProductWithTag)
 	engine.GET("api/search/product/page", a.handleSearchProductPagination)
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
@@ -72,7 +73,7 @@ func (a *Api) Start() {
 	//========================================================================
 
 	//========================================================================
-	engine.POST("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
+	engine.GET("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
 	//========================================================================
 
 	//========================================================================
@@ -196,7 +197,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
 			return
 		}
-		queriedList = helper.ApplyQueryToData(productList, country, location, depDate)
+		queriedList = helper.ApplyQueryToData(productList, country, location, depDate, "")
 	}
 
 	if priceFrom != "" || priceTo != "" || days != "" {
@@ -214,6 +215,76 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	}
 
 	err = helper.OptimizeProductSearch(response)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to optimize product search: " + err.Error()})
+		return
+	}
+
+	if refreshDB {
+		go func() {
+			db.RefreshDB(a.DBService, collectionName, id, response)
+			cache.RefreshCache(response, key, *a.CacheTimes.LongCacheTime, a.CacheService)
+		}()
+	}
+
+	// Page token for pagination
+	token := generateToken()
+	go func() {
+		if jsonData, err := goccyjson.Marshal(response); err == nil {
+			err := a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime).Err()
+			if err != nil {
+				logger.Log.Log("Failed to set cache page:", err)
+			}
+		}
+	}()
+
+	// Slice to first 24
+	firstPage := response.ProductArray.Items
+	if len(firstPage) > 24 {
+		firstPage = firstPage[:24]
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"products": firstPage,
+		"token":    token,
+		"hasMore":  len(response.ProductArray.Items) > 24,
+	})
+}
+
+func (a *Api) handleSearchProductWithTag(c *gin.Context) {
+	tagName := c.Param("tagName")
+	key := getSHA256Hash(c.Request.URL.String())
+	collectionName := "products_with_tags"
+	id := tagName
+
+	var queriedList []*wsdl.Product
+	refreshDB := false
+
+	if cached := cache.CheckCacheHit[wsdl.SearchProductResponse](key, a.CacheService); cached != nil {
+		queriedList = cached.ProductArray.Items
+	} else if dbData, _ := db.CheckDBHit[wsdl.SearchProductResponse](a.DBService, collectionName, id); dbData != nil {
+		// Fallback to DB if not in cache
+		go cache.RefreshCache(dbData, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+		queriedList = dbData.ProductArray.Items
+	} else {
+		refreshDB = true
+		productList, dbErr := db.GetAllProducts[wsdl.ProductWrapper](a.DBService, "product_index")
+		if dbErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB fallback failed: " + dbErr.Error()})
+			return
+		}
+		queriedList = helper.ApplyQueryToData(productList, "", "", "", tagName)
+	}
+
+	size := len(queriedList)
+	totalProducts := strconv.Itoa(size)
+
+	response := &wsdl.SearchProductResponse{
+		TotalProducts: &totalProducts,
+		ProductArray:  &wsdl.ProductArray{Items: queriedList},
+	}
+
+	err := helper.OptimizeProductSearch(response)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to optimize product search: " + err.Error()})
 		return
