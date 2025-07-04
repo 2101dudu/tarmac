@@ -57,6 +57,7 @@ func (a *Api) Start() {
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
 	engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
 	engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
+	engine.GET("api/page/highlighted/tag", a.handleGetHighlightedTag)
 
 	//========================================================================
 	engine.POST("api/admin/auth", a.handleAdminAuth) // ADMIN ENDPOINT
@@ -65,9 +66,10 @@ func (a *Api) Start() {
 	admin.Use(a.AdminAuthMiddleware())
 	admin.GET("/products", a.handleListAllProducts)
 	admin.POST("/products/:prodCode/tags/add", a.handleAddProductTags)
-	admin.GET("/products/:prodCode/tags/remove/:optionToRemove", a.handleRemoveProductTags)
+	admin.GET("/products/:prodCode/tags/remove/:tagToRemove", a.handleRemoveProductTags)
 	admin.POST("/products/:prodCode/disable", a.handleProductDisable)
 	admin.POST("/products/:prodCode/enable", a.handleProductEnable)
+	admin.GET("/page/highlight/:tagToHighlight", a.handleHighlightTag)
 
 	//========================================================================
 
@@ -159,11 +161,25 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		return
 	}
 
+	// list length
+	listLength := 24 // default 24 pages
+	if listLengthFromQuery, err := strconv.Atoi(extractStringField(raw, "Length")); err == nil && listLengthFromQuery > 0 {
+		listLength = listLengthFromQuery
+	}
+
 	// sort
 	country := extractStringField(raw, "Country")
 	location := extractStringField(raw, "Location")
 	depDate := extractStringField(raw, "DepDate")
 	tagName := extractStringField(raw, "Tag")
+
+	// for the best-sellers page
+	if tagName == "highlighted-tag" {
+		tagNameOnDB, _ := db.CheckDBHit[string](a.DBService, "highlighted-tag", "highlighted-tag")
+		if tagNameOnDB != nil {
+			tagName = *tagNameOnDB
+		}
+	}
 
 	sortBy := extractStringField(raw, "SortBy")
 	sortOrder := extractStringField(raw, "SortOrder")
@@ -238,16 +254,16 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 		}
 	}()
 
-	// Slice to first 24
+	// Slice to first listLength
 	firstPage := response.ProductArray.Items
-	if len(firstPage) > 24 {
-		firstPage = firstPage[:24]
+	if len(firstPage) > listLength {
+		firstPage = firstPage[:listLength]
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"products": firstPage,
 		"token":    token,
-		"hasMore":  len(response.ProductArray.Items) > 24,
+		"hasMore":  len(response.ProductArray.Items) > listLength,
 	})
 }
 
@@ -721,19 +737,19 @@ func (a *Api) handleRemoveProductTags(c *gin.Context) {
 		return
 	}
 
-	optionToRemove := c.Param("optionToRemove")
+	tagToRemove := c.Param("tagToRemove")
 
-	if optionToRemove == "" {
+	if tagToRemove == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing option to remove"})
 		return
 	}
 
 	go func() {
 		pWrapper, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
-		// Remove optionToRemove from pWrapper.Tags
+		// Remove tagToRemove from pWrapper.Tags
 		var newTags []string
 		for _, tag := range pWrapper.Tags {
-			if tag != optionToRemove {
+			if tag != tagToRemove {
 				newTags = append(newTags, tag)
 			}
 		}
@@ -778,4 +794,20 @@ func (a *Api) handleProductEnable(c *gin.Context) {
 	db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pW)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Product enabled successfully"})
+}
+
+func (a *Api) handleHighlightTag(c *gin.Context) {
+	tagName := c.Param("tagToHighlight")
+	db.RefreshDB(a.DBService, "highlighted-tag", "highlighted-tag", tagName)
+	c.JSON(http.StatusOK, gin.H{"message": "Product enabled successfully"})
+}
+
+func (a *Api) handleGetHighlightedTag(c *gin.Context) {
+	tagName, _ := db.CheckDBHit[string](a.DBService, "highlighted-tag", "highlighted-tag")
+	if tagName == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No highlighted tag"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tag": *tagName})
 }
