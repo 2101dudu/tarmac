@@ -25,7 +25,7 @@ func main() {
 	cacheService := cache.Start(&cacheClient)
 
 	dbClient := db.Client{Addr: vars.Endpoints.DBEndpoint, Username: vars.Credentials.DBUsername, Password: vars.Credentials.DBPassword}
-	dbService := db.Start(&dbClient)
+	dbService := dbClient.NewDbService()
 
 	logger.Start(vars.Logs.FilePath, true) // temp, change to flag system
 	// defer logger.Log.Close()

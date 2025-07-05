@@ -12,18 +12,18 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type DBClient struct {
+type Client struct {
 	Addr     string
 	Username string
 	Password string
 }
 
 type Service struct {
-	dbClient    *DBClient
+	dbClient    *Client
 	mongoClient *mongo.Client
 }
 
-func (dbClient *DBClient) NewDbService() *Service {
+func (dbClient *Client) NewDbService() *Service {
 	clientOptions := options.Client().ApplyURI("mongodb://" + dbClient.Addr)
 
 	clientOptions.SetAuth(options.Credential{
