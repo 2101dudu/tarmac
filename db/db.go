@@ -12,13 +12,18 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type Client struct {
+type DBClient struct {
 	Addr     string
 	Username string
 	Password string
 }
 
-func Start(dbClient *Client) *mongo.Client {
+type Service struct {
+	dbClient    *DBClient
+	mongoClient *mongo.Client
+}
+
+func (dbClient *DBClient) NewDbService() *Service {
 	clientOptions := options.Client().ApplyURI("mongodb://" + dbClient.Addr)
 
 	clientOptions.SetAuth(options.Credential{
@@ -27,29 +32,32 @@ func Start(dbClient *Client) *mongo.Client {
 		AuthSource: "admin",
 	})
 
-	client, err := mongo.Connect(clientOptions)
+	mongoclient, err := mongo.Connect(clientOptions)
 	if err != nil {
 		log.Fatal(err)
 		return nil
 	}
 
-	err = client.Ping(context.Background(), nil)
+	err = mongoclient.Ping(context.Background(), nil)
 	if err != nil {
 		log.Fatal("Mongo ping failed:", err)
 		return nil
 	}
 
-	return client
+	return &Service{
+		dbClient:    dbClient,
+		mongoClient: mongoclient,
+	}
 }
 
-func returnCollectionPointer(dbClient *mongo.Client, collection string) *mongo.Collection {
-	return dbClient.Database("tarmac").Collection(collection)
+func (db *Service) returnCollectionPointer(collection string) *mongo.Collection {
+	return db.mongoClient.Database("tarmac").Collection(collection)
 }
 
-func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string) (*T, bool) {
+func CheckDBHit[T any](dbService *Service, collectionName string, id string) (*T, bool) {
 	// defer logger.Log.TrackTime()()
 
-	collection := returnCollectionPointer(dbClient, collectionName)
+	collection := dbService.returnCollectionPointer(collectionName)
 	soapStore, err := loadData(collection, id)
 	if err == mongo.ErrNoDocuments {
 		return nil, false
@@ -62,9 +70,9 @@ func CheckDBHit[T any](dbClient *mongo.Client, collectionName string, id string)
 	return uncompressedData, time.Since(soapStore.FetchedAt) > 24*time.Hour
 }
 
-func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data any) {
+func (db *Service) RefreshDB(collectionName string, id string, data any) {
 	// defer logger.Log.TrackTime()()
-	collection := returnCollectionPointer(dbClient, collectionName)
+	collection := db.returnCollectionPointer(collectionName)
 	err := storeData(collection, id, data)
 	if err != nil {
 		logger.Log.Log("Failed DB refresh: ", err)
@@ -73,9 +81,9 @@ func RefreshDB(dbClient *mongo.Client, collectionName string, id string, data an
 	}
 }
 
-func GetAllProducts[T any](dbClient *mongo.Client, collectionName string) ([]*T, error) {
+func GetAllProducts[T any](dbService *Service, collectionName string) ([]*T, error) {
 	// defer logger.Log.TrackTime()()
-	collection := returnCollectionPointer(dbClient, collectionName)
+	collection := dbService.returnCollectionPointer(collectionName)
 	cursor, err := collection.Find(context.TODO(), bson.M{})
 	if err != nil {
 		return nil, err
@@ -106,8 +114,23 @@ func GetAllProducts[T any](dbClient *mongo.Client, collectionName string) ([]*T,
 	return products, nil
 }
 
-func DeleteByID(dbClient *mongo.Client, collectionName string, id string) error {
-	collection := returnCollectionPointer(dbClient, collectionName)
+func (db *Service) DeleteByID(collectionName string, id string) error {
+	collection := db.returnCollectionPointer(collectionName)
 	_, err := collection.DeleteOne(context.TODO(), bson.M{"_id": id})
 	return err
+}
+
+func (db *Service) RemoveCollections() {
+	collections, err := db.mongoClient.Database("tarmac").ListCollectionNames(context.TODO(), struct{}{})
+	if err != nil {
+		logger.Log.Log("Failed to list Mongo collections:", err)
+		return
+	}
+	for _, col := range collections {
+		if err := db.mongoClient.Database("tarmac").Collection(col).Drop(context.TODO()); err != nil {
+			logger.Log.Log("Failed to drop collection "+col+":", err)
+		} else {
+			logger.Log.Log("Dropped collection:", col)
+		}
+	}
 }

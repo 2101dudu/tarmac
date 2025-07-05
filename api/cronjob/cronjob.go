@@ -6,11 +6,9 @@ import (
 	"tarmac/logger"
 	"tarmac/wsdl"
 	"time"
-
-	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsStruct, dbClient *mongo.Client) (error, []string, []string) {
+func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsStruct, dbService *db.Service) (error, []string, []string) {
 	logger.Log.Log("Starting full product sync...")
 
 	collectionName := "product_index"
@@ -47,7 +45,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		}
 
 		// get existing product and store its tags
-		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbClient, collectionName, codeStr)
+		oldProduct, _ := db.CheckDBHit[wsdl.ProductWrapper](dbService, collectionName, codeStr)
 
 		tags := []string{}
 		enabled := true
@@ -63,7 +61,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		// wrap code into a struct with product-specific tags
 		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: tags, Enabled: &enabled}
 
-		db.RefreshDB(dbClient, collectionName, codeStr, productWrapper)
+		db.RefreshDB(dbService, collectionName, codeStr, productWrapper)
 
 		// handle list of countries + locations
 		if product.Country != nil {
@@ -84,7 +82,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		locationCodes = append(locationCodes, code)
 	}
 
-	productsList, _ := db.GetAllProducts[wsdl.ProductWrapper](dbClient, collectionName)
+	productsList, _ := db.GetAllProducts[wsdl.ProductWrapper](dbService, collectionName)
 
 	for _, pW := range productsList {
 		if pW == nil || pW.Product.Code == nil {
@@ -93,7 +91,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		code := *pW.Product.Code
 		if _, found := seenProductCodes[code]; !found {
 			// delete product from DB
-			db.DeleteByID(dbClient, collectionName, code)
+			db.DeleteByID(dbService, collectionName, code)
 			logger.Log.Log("Deleted stale product: ", code)
 		}
 	}

@@ -17,7 +17,6 @@ import (
 	"tarmac/wsdl"
 
 	goccyjson "github.com/goccy/go-json"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -32,7 +31,7 @@ type Api struct {
 	Credentials         *wsdl.CredentialsStruct
 	CacheTimes          *env.CacheTimes
 	CacheService        *redis.Client
-	DBService           *mongo.Client
+	DBService           *db.Service
 	MailService         *mail.MailService
 	AdminHashedPassword string
 }
@@ -113,7 +112,7 @@ func (a *Api) handleGetMasterData(c *gin.Context) {
 	}
 
 	maybeRefreshDBAndCache(refreshDB, refreshCache,
-		func() { db.RefreshDB(a.DBService, collectionName, id, data) },
+		func() { a.DBService.RefreshDB(collectionName, id, data) },
 		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
 	)
 
@@ -140,7 +139,7 @@ func (a *Api) handleSearchProduct(c *gin.Context) {
 	}
 
 	maybeRefreshDBAndCache(refreshDB, refreshCache,
-		func() { db.RefreshDB(a.DBService, collectionName, id, data) },
+		func() { a.DBService.RefreshDB(collectionName, id, data) },
 		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
 	)
 
@@ -240,7 +239,7 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 
 	if refreshDB {
 		go func() {
-			db.RefreshDB(a.DBService, collectionName, id, response)
+			a.DBService.RefreshDB(collectionName, id, response)
 			cache.RefreshCache(response, key, *a.CacheTimes.LongCacheTime, a.CacheService)
 		}()
 	}
@@ -380,7 +379,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 		Price:            extractPointer(product.PriceFrom),
 	}
 
-	go db.RefreshDB(a.DBService, collectionName, id, fullData)
+	go a.DBService.RefreshDB(collectionName, id, fullData)
 	go cache.RefreshCache(fullData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
 
 	c.JSON(http.StatusOK, fullData)
@@ -576,21 +575,7 @@ func (a *Api) handleResetState(c *gin.Context) {
 			logger.Log.Log("Redis cache cleared")
 		}
 	}()
-
-	go func() {
-		collections, err := a.DBService.Database("tarmac").ListCollectionNames(c, struct{}{})
-		if err != nil {
-			logger.Log.Log("Failed to list Mongo collections:", err)
-			return
-		}
-		for _, col := range collections {
-			if err := a.DBService.Database("tarmac").Collection(col).Drop(c); err != nil {
-				logger.Log.Log("Failed to drop collection "+col+":", err)
-			} else {
-				logger.Log.Log("Dropped collection:", col)
-			}
-		}
-	}()
+	go a.DBService.RemoveCollections()
 
 	c.JSON(http.StatusOK, gin.H{"status": "reset concluded"})
 }
@@ -658,7 +643,7 @@ func (a *Api) helperFuncSyncAllProducts(countryCodes, locationCodes []string) {
 		}
 	}
 
-	go db.RefreshDB(a.DBService, collectionName, id, newMasterData)
+	go a.DBService.RefreshDB(collectionName, id, newMasterData)
 }
 
 func (a *Api) handleAdminAuth(c *gin.Context) {
@@ -725,7 +710,7 @@ func (a *Api) handleAddProductTags(c *gin.Context) {
 	go func() {
 		pWrapper, _ := db.CheckDBHit[wsdl.ProductWrapper](a.DBService, "product_index", prodCodeRaw)
 		pWrapper.Tags = append(pWrapper.Tags, req.Tags...)
-		db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pWrapper)
+		a.DBService.RefreshDB("product_index", prodCodeRaw, pWrapper)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tags added successfully"})
@@ -756,7 +741,7 @@ func (a *Api) handleRemoveProductTags(c *gin.Context) {
 			}
 		}
 		pWrapper.Tags = newTags
-		db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pWrapper)
+		a.DBService.RefreshDB("product_index", prodCodeRaw, pWrapper)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tag removed successfully"})
@@ -775,7 +760,7 @@ func (a *Api) handleProductDisable(c *gin.Context) {
 	// disable product
 	*pW.Enabled = false
 
-	db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pW)
+	a.DBService.RefreshDB("product_index", prodCodeRaw, pW)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Product disabled successfully"})
 }
@@ -793,14 +778,14 @@ func (a *Api) handleProductEnable(c *gin.Context) {
 	// disable product
 	*pW.Enabled = true
 
-	db.RefreshDB(a.DBService, "product_index", prodCodeRaw, pW)
+	a.DBService.RefreshDB("product_index", prodCodeRaw, pW)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Product enabled successfully"})
 }
 
 func (a *Api) handleHighlightTag(c *gin.Context) {
 	tagName := c.Param("tagToHighlight")
-	db.RefreshDB(a.DBService, "highlighted-tag", "highlighted-tag", tagName)
+	a.DBService.RefreshDB("highlighted-tag", "highlighted-tag", tagName)
 	c.JSON(http.StatusOK, gin.H{"message": "Product enabled successfully"})
 }
 
