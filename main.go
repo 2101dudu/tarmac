@@ -6,6 +6,7 @@ import (
 	"tarmac/db"
 	"tarmac/env"
 	"tarmac/logger"
+	"tarmac/mail"
 	"tarmac/wsdl"
 
 	"github.com/fiorix/wsdl2go/soap"
@@ -29,12 +30,15 @@ func main() {
 	logger.Start(vars.Logs.FilePath, true) // temp, change to flag system
 	// defer logger.Log.Close()
 
+	mailClient := mail.MailClient{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
+	mailService := mailClient.Start()
+
 	api := api.Api{SoapService: soapService, Credentials: &wsdl.CredentialsStruct{
 		System:   &vars.Credentials.System,
 		Client:   &vars.Credentials.Client,
 		Username: &vars.Credentials.Username,
 		Password: &vars.Credentials.Password,
-	}, CacheService: cacheService, CacheTimes: vars.CacheTimes, DBService: dbService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
+	}, CacheService: cacheService, CacheTimes: vars.CacheTimes, DBService: dbService, MailService: mailService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
 
 	api.Start()
 }

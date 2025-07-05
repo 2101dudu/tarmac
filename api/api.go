@@ -13,6 +13,7 @@ import (
 	"tarmac/db"
 	"tarmac/env"
 	"tarmac/logger"
+	"tarmac/mail"
 	"tarmac/wsdl"
 
 	goccyjson "github.com/goccy/go-json"
@@ -32,6 +33,7 @@ type Api struct {
 	CacheTimes          *env.CacheTimes
 	CacheService        *redis.Client
 	DBService           *mongo.Client
+	MailService         *mail.MailService
 	AdminHashedPassword string
 }
 

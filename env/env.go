@@ -34,11 +34,18 @@ type Logs struct {
 	FilePath string
 }
 
+type EmailCredentials struct {
+	APIKey              string
+	AgencyEmail         string
+	InternalAgencyEmail string
+}
+
 type Vars struct {
-	Credentials *Credentials
-	CacheTimes  *CacheTimes
-	Endpoints   *Endpoints
-	Logs        *Logs
+	Credentials      *Credentials
+	CacheTimes       *CacheTimes
+	Endpoints        *Endpoints
+	Logs             *Logs
+	EmailCredentials *EmailCredentials
 }
 
 func loadCacheTimes() *CacheTimes {
@@ -86,15 +93,24 @@ func loadLogs() *Logs {
 	}
 }
 
+func loadEmailCredentials() *EmailCredentials {
+	return &EmailCredentials{
+		APIKey:              os.Getenv("EMAIL_API_KEY"),
+		AgencyEmail:         os.Getenv("AGENCY_EMAIL"),
+		InternalAgencyEmail: os.Getenv("INTERNAL_AGENCY_EMAIL"),
+	}
+}
+
 func LoadEnvFile() Vars {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 	return Vars{
-		CacheTimes:  loadCacheTimes(),
-		Credentials: loadCredentials(),
-		Endpoints:   loadEndpoints(),
-		Logs:        loadLogs(),
+		CacheTimes:       loadCacheTimes(),
+		Credentials:      loadCredentials(),
+		Endpoints:        loadEndpoints(),
+		Logs:             loadLogs(),
+		EmailCredentials: loadEmailCredentials(),
 	}
 }
