@@ -31,7 +31,7 @@ type Api struct {
 	CacheTimes          *env.CacheTimes
 	CacheService        *cache.Service
 	DBService           *db.Service
-	MailService         *mail.MailService
+	MailService         *mail.Service
 	AdminHashedPassword string
 }
 

@@ -6,7 +6,7 @@ import (
 	"github.com/resend/resend-go/v2"
 )
 
-type MailClient struct {
+type Client struct {
 	AgencyEmail         string
 	InternalAgencyEmail string
 	UserEmail           string
@@ -14,19 +14,19 @@ type MailClient struct {
 	APIKey              string
 }
 
-type MailService struct {
-	mailClient   *MailClient
+type Service struct {
+	mailClient   *Client
 	resendClient *resend.Client
 }
 
-func (m *MailClient) Start() *MailService {
-	return &MailService{
+func (m *Client) Start() *Service {
+	return &Service{
 		mailClient:   m,
 		resendClient: resend.NewClient(m.APIKey),
 	}
 }
 
-func (m *MailService) sendEmail(from, to string) {
+func (m *Service) sendEmail(from, to string) {
 	attachment := &resend.Attachment{ // TODO: check if the pdf is less than 40MB
 		Path:     m.mailClient.PDFFilePath,
 		Filename: "Orçamento.pdf",
@@ -51,7 +51,7 @@ func (m *MailService) sendEmail(from, to string) {
 	}
 }
 
-func (m *MailService) SendEmails() {
+func (m *Service) SendEmails() {
 	go m.sendEmail(m.mailClient.InternalAgencyEmail, m.mailClient.AgencyEmail) // to travel agency
 	go m.sendEmail(m.mailClient.AgencyEmail, m.mailClient.UserEmail)           // to user
 }

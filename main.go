@@ -30,7 +30,7 @@ func main() {
 	logger.Start(vars.Logs.FilePath, true) // temp, change to flag system
 	// defer logger.Log.Close()
 
-	mailClient := mail.MailClient{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
+	mailClient := mail.Client{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
 	mailService := mailClient.Start()
 
 	api := api.Api{SoapService: soapService, Credentials: &wsdl.CredentialsStruct{
