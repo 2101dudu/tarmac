@@ -22,7 +22,6 @@ import (
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/go-redis/redis"
 	"github.com/robfig/cron/v3"
 )
 
@@ -30,7 +29,7 @@ type Api struct {
 	SoapService         wsdl.Wbs_pkt_methodsSoap
 	Credentials         *wsdl.CredentialsStruct
 	CacheTimes          *env.CacheTimes
-	CacheService        *redis.Client
+	CacheService        *cache.Service
 	DBService           *db.Service
 	MailService         *mail.MailService
 	AdminHashedPassword string
@@ -113,7 +112,7 @@ func (a *Api) handleGetMasterData(c *gin.Context) {
 
 	maybeRefreshDBAndCache(refreshDB, refreshCache,
 		func() { a.DBService.RefreshDB(collectionName, id, data) },
-		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
+		func() { a.CacheService.RefreshCache(key, data, *a.CacheTimes.LongCacheTime) },
 	)
 
 	c.JSON(http.StatusOK, data)
@@ -140,7 +139,7 @@ func (a *Api) handleSearchProduct(c *gin.Context) {
 
 	maybeRefreshDBAndCache(refreshDB, refreshCache,
 		func() { a.DBService.RefreshDB(collectionName, id, data) },
-		func() { cache.RefreshCache(data, key, *a.CacheTimes.LongCacheTime, a.CacheService) },
+		func() { a.CacheService.RefreshCache(key, data, *a.CacheTimes.LongCacheTime) },
 	)
 
 	c.JSON(http.StatusOK, data)
@@ -199,11 +198,11 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	refreshDB := false
 
 	// Try cache first
-	if cached := cache.CheckCacheHit[wsdl.SearchProductResponse](key, a.CacheService); cached != nil {
+	if cached := cache.CheckCacheHit[wsdl.SearchProductResponse](a.CacheService, key); cached != nil {
 		queriedList = cached.ProductArray.Items
 	} else if dbData, _ := db.CheckDBHit[wsdl.SearchProductResponse](a.DBService, collectionName, id); dbData != nil {
 		// Fallback to DB if not in cache
-		go cache.RefreshCache(dbData, key, *a.CacheTimes.MediumCacheTime, a.CacheService)
+		go a.CacheService.RefreshCache(key, dbData, *a.CacheTimes.MediumCacheTime)
 		queriedList = dbData.ProductArray.Items
 	} else {
 		// Fallback to full DB search if not in cache or DB
@@ -240,20 +239,13 @@ func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	if refreshDB {
 		go func() {
 			a.DBService.RefreshDB(collectionName, id, response)
-			cache.RefreshCache(response, key, *a.CacheTimes.LongCacheTime, a.CacheService)
+			a.CacheService.RefreshCache(key, response, *a.CacheTimes.LongCacheTime)
 		}()
 	}
 
 	// Page token for pagination
 	token := generateToken()
-	go func() {
-		if jsonData, err := goccyjson.Marshal(response); err == nil {
-			err := a.CacheService.Set("pagecache:"+token, jsonData, *a.CacheTimes.MediumCacheTime).Err()
-			if err != nil {
-				logger.Log.Log("Failed to set cache page:", err)
-			}
-		}
-	}()
+	go a.CacheService.RefreshCache("pagecache:"+token, response, *a.CacheTimes.MediumCacheTime)
 
 	// Slice to first listLength
 	firstPage := response.ProductArray.Items
@@ -277,20 +269,9 @@ func (a *Api) handleSearchProductPagination(c *gin.Context) {
 
 	cacheKey := "pagecache:" + token
 
-	// Retrieve full response from cache
-	val, err := a.CacheService.Get(cacheKey).Result()
-	if err == redis.Nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Token not found or expired"})
-		return
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Cache error: " + err.Error()})
-		return
-	}
-
-	var fullResp *wsdl.SearchProductResponse
-	if err := goccyjson.Unmarshal([]byte(val), &fullResp); err != nil || fullResp == nil {
-		_ = a.CacheService.Del(cacheKey) // clear corrupted entry
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Corrupted cache. Entry cleared."})
+	fullResp := cache.CheckCacheHit[wsdl.SearchProductResponse](a.CacheService, cacheKey)
+	if fullResp == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"internal error": "no pagination data"})
 		return
 	}
 
@@ -334,7 +315,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	}
 
 	// Check cache first
-	cachedData := cache.CheckCacheHit[productWithExtradData](cacheKey, a.CacheService)
+	cachedData := cache.CheckCacheHit[productWithExtradData](a.CacheService, cacheKey)
 	if cachedData != nil {
 		c.JSON(http.StatusOK, *cachedData)
 		return
@@ -343,7 +324,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	// Check DB next
 	dbData, refreshDB := db.CheckDBHit[productWithExtradData](a.DBService, collectionName, id)
 	if dbData != nil {
-		go cache.RefreshCache(dbData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
+		go a.CacheService.RefreshCache(cacheKey, dbData, *a.CacheTimes.MediumCacheTime)
 		c.JSON(http.StatusOK, *dbData)
 		if !refreshDB {
 			return // fresh, skip fetching from API
@@ -380,7 +361,7 @@ func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	}
 
 	go a.DBService.RefreshDB(collectionName, id, fullData)
-	go cache.RefreshCache(fullData, cacheKey, *a.CacheTimes.MediumCacheTime, a.CacheService)
+	go a.CacheService.RefreshCache(cacheKey, fullData, *a.CacheTimes.MediumCacheTime)
 
 	c.JSON(http.StatusOK, fullData)
 }
@@ -398,19 +379,19 @@ func (a *Api) handleDynSearchProductAvailableServices(c *gin.Context) {
 	cacheKey := "asyncsearch:" + searchId
 
 	// Save status as "processing"
-	cache.RefreshCache("processing", cacheKey+":status", *a.CacheTimes.ShortCacheTime, a.CacheService)
+	a.CacheService.RefreshCache(cacheKey+":status", "processing", *a.CacheTimes.ShortCacheTime)
 
 	// Spawn goroutine to call SOAP
 	go func() {
 		resp, err := a.SoapService.DynSearchProductAvailableServices(&input)
 		if err != nil {
 			logger.Log.Log("Async search failed:", err)
-			cache.RefreshCache("error", cacheKey+":status", *a.CacheTimes.ShortCacheTime, a.CacheService)
+			a.CacheService.RefreshCache(cacheKey+":status", "error", *a.CacheTimes.ShortCacheTime)
 			return
 		}
 
-		cache.RefreshCache(resp, cacheKey+":data", *a.CacheTimes.MediumCacheTime, a.CacheService)
-		cache.RefreshCache("done", cacheKey+":status", *a.CacheTimes.MediumCacheTime, a.CacheService)
+		a.CacheService.RefreshCache(cacheKey+":data", resp, *a.CacheTimes.MediumCacheTime)
+		a.CacheService.RefreshCache(cacheKey+":status", "done", *a.CacheTimes.MediumCacheTime)
 	}()
 
 	// Return searchId immediately
@@ -427,7 +408,7 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 	statusKey := "asyncsearch:" + searchId + ":status"
 	dataKey := "asyncsearch:" + searchId + ":data"
 
-	status := cache.CheckCacheHit[string](statusKey, a.CacheService)
+	status := cache.CheckCacheHit[string](a.CacheService, statusKey)
 	if status == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Search ID not found"})
 		return
@@ -438,7 +419,7 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 		return
 	}
 
-	resp := cache.CheckCacheHit[wsdl.DynProductAvailableServicesResponse](dataKey, a.CacheService)
+	resp := cache.CheckCacheHit[wsdl.DynProductAvailableServicesResponse](a.CacheService, dataKey)
 	if resp == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Corrupted result"})
 		return
@@ -510,7 +491,7 @@ func getData[T any](a *Api, cacheKey, collectionName, id string, fetchFunc func(
 	var empty T
 
 	// Check cache first
-	cachedData := cache.CheckCacheHit[T](cacheKey, a.CacheService)
+	cachedData := cache.CheckCacheHit[T](a.CacheService, cacheKey)
 	if cachedData != nil {
 		return *cachedData, false, false, nil
 	}
@@ -568,13 +549,7 @@ func parsePaginationParams(c *gin.Context) (token string, cursor, limit int, err
 }
 
 func (a *Api) handleResetState(c *gin.Context) {
-	go func() {
-		if err := a.CacheService.FlushAll().Err(); err != nil {
-			logger.Log.Log("Failed to flush Redis:", err)
-		} else {
-			logger.Log.Log("Redis cache cleared")
-		}
-	}()
+	go a.CacheService.RemoveCache()
 	go a.DBService.RemoveCollections()
 
 	c.JSON(http.StatusOK, gin.H{"status": "reset concluded"})
@@ -660,7 +635,7 @@ func (a *Api) handleAdminAuth(c *gin.Context) {
 	}
 
 	token := generateToken()
-	go cache.RefreshCache("valid", "admin:"+token, *a.CacheTimes.MediumCacheTime, a.CacheService)
+	go a.CacheService.RefreshCache("admin:"+token, "valid", *a.CacheTimes.MediumCacheTime)
 
 	c.JSON(http.StatusOK, gin.H{"token": token})
 }
@@ -673,7 +648,7 @@ func (a *Api) AdminAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if storedToken := cache.CheckCacheHit[string]("admin:"+token, a.CacheService); *storedToken != "valid" {
+		if storedToken := cache.CheckCacheHit[string](a.CacheService, "admin:"+token); *storedToken != "valid" {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}

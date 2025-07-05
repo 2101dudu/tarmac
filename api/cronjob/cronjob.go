@@ -61,7 +61,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		// wrap code into a struct with product-specific tags
 		productWrapper := wsdl.ProductWrapper{Product: *product, Tags: tags, Enabled: &enabled}
 
-		db.RefreshDB(dbService, collectionName, codeStr, productWrapper)
+		dbService.RefreshDB(collectionName, codeStr, productWrapper)
 
 		// handle list of countries + locations
 		if product.Country != nil {
@@ -91,7 +91,7 @@ func SyncAllProducts(service wsdl.Wbs_pkt_methodsSoap, creds *wsdl.CredentialsSt
 		code := *pW.Product.Code
 		if _, found := seenProductCodes[code]; !found {
 			// delete product from DB
-			db.DeleteByID(dbService, collectionName, code)
+			dbService.DeleteByID(collectionName, code)
 			logger.Log.Log("Deleted stale product: ", code)
 		}
 	}

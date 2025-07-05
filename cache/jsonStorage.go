@@ -3,22 +3,20 @@ package cache
 import (
 	"tarmac/json"
 	"time"
-
-	"github.com/go-redis/redis"
 )
 
-func storeJSON(data any, key string, ttl time.Duration, db *redis.Client) error {
+func (c *Service) storeJSON(key string, data any, ttl time.Duration) error {
 	// defer logger.Log.TrackTime()()
 	compressedData, err := json.Compress(data)
 	if err != nil {
 		return err
 	}
-	return db.Set(key, compressedData, ttl).Err()
+	return c.redisClient.Set(key, compressedData, ttl).Err()
 }
 
-func loadJSON[T any](key string, db *redis.Client) (*T, error) {
+func loadJSON[T any](cacheService *Service, key string) (*T, error) {
 	// defer logger.Log.TrackTime()()
-	compressedData, err := db.Get(key).Bytes()
+	compressedData, err := cacheService.redisClient.Get(key).Bytes()
 	if err != nil { // "It returns redis.Nil error when key does not exist."
 		return nil, nil
 	}

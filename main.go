@@ -22,7 +22,7 @@ func main() {
 	soapService := wsdl.NewWbs_pkt_methodsSoap(&soapClient)
 
 	cacheClient := cache.Client{Addr: vars.Endpoints.CacheEndpoint}
-	cacheService := cache.Start(&cacheClient)
+	cacheService := cacheClient.NewCacheService()
 
 	dbClient := db.Client{Addr: vars.Endpoints.DBEndpoint, Username: vars.Credentials.DBUsername, Password: vars.Credentials.DBPassword}
 	dbService := dbClient.NewDbService()

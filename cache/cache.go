@@ -12,16 +12,24 @@ type Client struct {
 	// ...
 }
 
-func Start(cache *Client) *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr: cache.Addr,
-	})
-	return client
+type Service struct {
+	cacheClient *Client
+	redisClient *redis.Client
 }
 
-func CheckCacheHit[T any](key string, cache *redis.Client) *T {
+func (c *Client) NewCacheService() *Service {
+	r := redis.NewClient(&redis.Options{
+		Addr: c.Addr,
+	})
+	return &Service{
+		cacheClient: c,
+		redisClient: r,
+	}
+}
+
+func CheckCacheHit[T any](cacheService *Service, key string) *T {
 	// defer logger.Log.TrackTime()()
-	data, err := loadJSON[T](key, cache)
+	data, err := loadJSON[T](cacheService, key)
 	if err != nil {
 		logger.Log.Log("Failed cache check:", err)
 	} else if data == nil {
@@ -32,12 +40,20 @@ func CheckCacheHit[T any](key string, cache *redis.Client) *T {
 	return data
 }
 
-func RefreshCache(data any, key string, ttl time.Duration, cache *redis.Client) {
+func (c *Service) RefreshCache(key string, data any, ttl time.Duration) {
 	// defer logger.Log.TrackTime()()
-	err := storeJSON(data, key, ttl, cache)
+	err := c.storeJSON(key, data, ttl)
 	if err != nil {
 		logger.Log.Log("Failed cache refresh:", err)
 	} else {
 		logger.Log.Log("Cache refreshed")
+	}
+}
+
+func (c *Service) RemoveCache() {
+	if err := c.redisClient.FlushAll().Err(); err != nil {
+		logger.Log.Log("Failed to flush Redis:", err)
+	} else {
+		logger.Log.Log("Redis cache cleared")
 	}
 }
