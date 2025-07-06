@@ -29,9 +29,10 @@ func main() {
 	mailClient := mail.Client{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
 	mailService := mailClient.Start()
 
-	coordinatorService := coordinator.Service{WSDLService: wsdlService, CacheService: cacheService, DBService: dbService, MailService: mailService}
+	coordinatorClient := coordinator.Client{WSDLService: wsdlService, CacheService: cacheService, DBService: dbService, MailService: mailService}
+	coordinatorService := coordinatorClient.NewCoordinatorService()
 
-	api := api.Api{Coordinator: &coordinatorService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
+	api := api.Api{Coordinator: coordinatorService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
 
 	api.Start()
 }
