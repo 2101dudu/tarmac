@@ -354,9 +354,8 @@ func (a *Api) handleHighlightTag(c *gin.Context) {
 func (a *Api) handleGetHighlightedTag(c *gin.Context) {
 	tagName, _ := a.Coordinator.HandleGetHighlightedTag()
 	if tagName == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": errors.New("No highlighted tag")})
-		return
+		c.JSON(http.StatusOK, gin.H{"tag": "charter"}) // default
+	} else {
+		c.JSON(http.StatusOK, gin.H{"tag": *tagName})
 	}
-
-	c.JSON(http.StatusOK, gin.H{"tag": *tagName})
 }

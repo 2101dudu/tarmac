@@ -154,12 +154,11 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 	collectionName := "dyn_product_parameters"
 	id := prodCode
 
-	var data *wsdl.ProductWithExtraData
-	var refreshDB bool
 	if data := cache.CheckCacheHit[wsdl.ProductWithExtraData](s.cacheService, cacheKey); data != nil {
 		return data, nil
-	} else if data, refreshDB = db.CheckDBHit[wsdl.ProductWithExtraData](s.dbService, collectionName, id); data != nil {
-		// NOP — data gets its value from the DB and does not need to query
+	} else if data, _ = db.CheckDBHit[wsdl.ProductWithExtraData](s.dbService, collectionName, id); data != nil {
+		go s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
+		return data, nil
 	} else if newData, err := s.wsdlService.DynGetProductParameters(prodCode); err == nil {
 		*newData.Name = utils.SimplifyString(*newData.Name)
 		productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", id)
@@ -168,27 +167,21 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 			return nil, errors.New("No product")
 		}
 
-		product := productW.Product
-
 		data = &wsdl.ProductWithExtraData{
 			Data:             *newData,
-			DescriptionArray: extractPointer(product.TextContentsArray),
-			PhotoArray:       extractPointer(product.PhotoArray),
-			Price:            extractPointer(product.PriceFrom),
+			DescriptionArray: extractPointer(productW.Product.TextContentsArray),
+			PhotoArray:       extractPointer(productW.Product.PhotoArray),
+			Price:            extractPointer(productW.Product.PriceFrom),
 		}
-		refreshDB = true
+
+		go func() {
+			s.dbService.RefreshDB(collectionName, id, data)
+			s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
+		}()
+		return data, nil
 	} else {
 		return nil, err
 	}
-
-	go func() {
-		if refreshDB {
-			s.dbService.RefreshDB(collectionName, id, data)
-		}
-		s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
-	}()
-
-	return data, nil
 }
 
 func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvailableServicesRequest) string {
