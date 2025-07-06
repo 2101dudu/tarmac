@@ -9,9 +9,9 @@ import (
 )
 
 type CacheTimes struct {
-	ShortCacheTime  *time.Duration
-	MediumCacheTime *time.Duration
-	LongCacheTime   *time.Duration
+	ShortCacheTime  time.Duration
+	MediumCacheTime time.Duration
+	LongCacheTime   time.Duration
 }
 
 type Credentials struct {
@@ -61,9 +61,9 @@ func loadCacheTimes() *CacheTimes {
 	}
 
 	return &CacheTimes{
-		ShortCacheTime:  loadDuration("SHORT_CACHE_TIME"),
-		MediumCacheTime: loadDuration("MEDIUM_CACHE_TIME"),
-		LongCacheTime:   loadDuration("LONG_CACHE_TIME"),
+		ShortCacheTime:  *loadDuration("SHORT_CACHE_TIME"),
+		MediumCacheTime: *loadDuration("MEDIUM_CACHE_TIME"),
+		LongCacheTime:   *loadDuration("LONG_CACHE_TIME"),
 	}
 }
 

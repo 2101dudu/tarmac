@@ -8,12 +8,20 @@ import (
 )
 
 type Client struct {
-	Addr string
-	// ...
+	Addr            string
+	ShortCacheTime  time.Duration
+	MediumCacheTime time.Duration
+	LongCacheTime   time.Duration
+}
+
+type CacheTimes struct {
+	ShortCacheTime  time.Duration
+	MediumCacheTime time.Duration
+	LongCacheTime   time.Duration
 }
 
 type Service struct {
-	cacheClient *Client
+	CacheTimes  *CacheTimes
 	redisClient *redis.Client
 }
 
@@ -22,7 +30,11 @@ func (c *Client) NewCacheService() *Service {
 		Addr: c.Addr,
 	})
 	return &Service{
-		cacheClient: c,
+		CacheTimes: &CacheTimes{
+			ShortCacheTime:  c.ShortCacheTime,
+			MediumCacheTime: c.MediumCacheTime,
+			LongCacheTime:   c.LongCacheTime,
+		},
 		redisClient: r,
 	}
 }

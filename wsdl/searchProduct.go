@@ -1,32 +1,17 @@
-package helper
+package wsdl
 
 import (
 	"errors"
-	"regexp"
 	"strconv"
-	"tarmac/wsdl"
+	"tarmac/utils"
 )
 
 type productWithPrice struct {
-	product *wsdl.Product
+	product *Product
 	price   float64
 }
 
-func trimEmojis(s string) string {
-	re := regexp.MustCompile(`&#\d+;`)
-	return re.ReplaceAllString(s, "")
-}
-
-func trimPrefix(s string) string {
-	re := regexp.MustCompile(`^\d+\s*:\s*`)
-	return re.ReplaceAllString(s, "")
-}
-
-func SimplifyString(s string) string {
-	return trimEmojis(trimPrefix(s))
-}
-
-func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
+func OptimizeProductSearch(res *SearchProductResponse) error {
 	totalProducts, err := strconv.Atoi(*res.TotalProducts)
 	if err != nil {
 		return errors.New("invalid TotalProducts")
@@ -47,7 +32,7 @@ func OptimizeProductSearch(res *wsdl.SearchProductResponse) error {
 			continue
 		}
 
-		*product.Name = SimplifyString(*product.Name)
+		*product.Name = utils.SimplifyString(*product.Name)
 
 		product.Continent = nil
 		product.Country = nil

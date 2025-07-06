@@ -1,4 +1,4 @@
-package helper
+package wsdl
 
 import (
 	"slices"
@@ -6,11 +6,10 @@ import (
 	"strconv"
 	"strings"
 	"tarmac/logger"
-	"tarmac/wsdl"
 	"time"
 )
 
-func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Product {
+func SortProducts(products []*Product, sortBy, sortOrder string) []*Product {
 	// defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
@@ -65,7 +64,7 @@ func SortProducts(products []*wsdl.Product, sortBy, sortOrder string) []*wsdl.Pr
 	return products
 }
 
-func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) []*wsdl.Product {
+func FilterProducts(products []*Product, priceFrom, priceTo, days string) []*Product {
 	// defer logger.Log.TrackTime()()
 	if len(products) == 0 {
 		return products
@@ -79,7 +78,7 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 	}
 	daysI, _ := strconv.Atoi(days)
 
-	var filtered []*wsdl.Product
+	var filtered []*Product
 
 	for _, p := range products {
 		if p == nil {
@@ -114,7 +113,7 @@ func FilterProducts(products []*wsdl.Product, priceFrom, priceTo, days string) [
 	return filtered
 }
 
-func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFrom, tagName string) []*wsdl.Product {
+func ApplyQueryToData(products []*ProductWrapper, country, location, dateFrom, tagName string) []*Product {
 	// defer logger.Log.TrackTime()()
 
 	var canonicalizedDate time.Time
@@ -126,7 +125,7 @@ func ApplyQueryToData(products []*wsdl.ProductWrapper, country, location, dateFr
 		canonicalizedDate, _ = time.Parse(time.DateOnly, dateFrom)
 	}
 
-	var queried []*wsdl.Product
+	var queried []*Product
 
 	for _, productW := range products {
 		if productW == nil || productW.Enabled == nil || !*productW.Enabled {

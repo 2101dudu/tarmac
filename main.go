@@ -3,25 +3,21 @@ package main
 import (
 	"tarmac/api"
 	"tarmac/cache"
+	"tarmac/coordinator"
 	"tarmac/db"
 	"tarmac/env"
 	"tarmac/logger"
 	"tarmac/mail"
 	"tarmac/wsdl"
-
-	"github.com/fiorix/wsdl2go/soap"
 )
 
 func main() {
 	vars := env.LoadEnvFile()
 
-	soapClient := soap.Client{
-		URL:       vars.Endpoints.APIEndpoint,
-		Namespace: wsdl.Namespace,
-	}
-	soapService := wsdl.NewWbs_pkt_methodsSoap(&soapClient)
+	wsdlClient := wsdl.Client{URL: vars.Endpoints.APIEndpoint, Namespace: wsdl.Namespace, System: vars.Credentials.System, Client: vars.Credentials.Client, Username: vars.Credentials.Username, Password: vars.Credentials.Password}
+	wsdlService := wsdlClient.NewWsdlService()
 
-	cacheClient := cache.Client{Addr: vars.Endpoints.CacheEndpoint}
+	cacheClient := cache.Client{Addr: vars.Endpoints.CacheEndpoint, ShortCacheTime: vars.CacheTimes.ShortCacheTime, MediumCacheTime: vars.CacheTimes.MediumCacheTime, LongCacheTime: vars.CacheTimes.LongCacheTime}
 	cacheService := cacheClient.NewCacheService()
 
 	dbClient := db.Client{Addr: vars.Endpoints.DBEndpoint, Username: vars.Credentials.DBUsername, Password: vars.Credentials.DBPassword}
@@ -33,12 +29,9 @@ func main() {
 	mailClient := mail.Client{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
 	mailService := mailClient.Start()
 
-	api := api.Api{SoapService: soapService, Credentials: &wsdl.CredentialsStruct{
-		System:   &vars.Credentials.System,
-		Client:   &vars.Credentials.Client,
-		Username: &vars.Credentials.Username,
-		Password: &vars.Credentials.Password,
-	}, CacheService: cacheService, CacheTimes: vars.CacheTimes, DBService: dbService, MailService: mailService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
+	coordinatorService := coordinator.Service{WSDLService: wsdlService, CacheService: cacheService, DBService: dbService, MailService: mailService}
+
+	api := api.Api{Coordinator: &coordinatorService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}
 
 	api.Start()
 }
