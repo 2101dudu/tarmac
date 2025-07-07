@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,7 +41,8 @@ func (a *Api) Start() {
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
 	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
-	//engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelected)
+	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
+	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 	//engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
 	//engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 	engine.GET("api/page/highlighted/tag", a.handleGetHighlightedTag)
@@ -163,24 +166,38 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp})
 }
 
-/*
-func (a *Api) handleDynSetServicesSelected(c *gin.Context) {
+func (a *Api) handleDynSetServicesSelectedAndGetToken(c *gin.Context) {
 	var input wsdl.DynServicesSelectedRequest
-
-	if err := c.BindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	d, _ := json.MarshalIndent(input, "", "    ") // temp
+	fmt.Println(string(d))                        // temp
 
-	resp, err := a.WSDLService.DynSetServicesSelected(input)
-	if err != nil {
+	token, err := a.Coordinator.HandleDynSetServicesSelectedAndGetToken(input)
+	fmt.Println(*token) // temp
+	if err != nil || token == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.Render(http.StatusOK, render.JSON{Data: resp})
+	c.JSON(http.StatusOK, gin.H{"token": *token})
 }
-*/
+
+func (a *Api) handleDynGetSimulation(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errors.New("Missing token")})
+		return
+	}
+	simul, err := a.Coordinator.HandleDynGetSimulation(token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, simul)
+}
+
 /*
 func (a *Api) handleDynCheckSetServices(c *gin.Context) {
 	var input wsdl.DynGetOptionalsSelectedRequest

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"tarmac/cache"
 	"tarmac/db"
+	"tarmac/json"
 	"tarmac/logger"
 	"tarmac/utils"
 	"tarmac/wsdl"
@@ -424,4 +425,44 @@ func (s *Service) HandleHighlightTag(tagName string) {
 
 func (s *Service) HandleGetHighlightedTag() (*string, bool) {
 	return db.CheckDBHit[string](s.dbService, "highlighted-tag", "highlighted-tag")
+}
+
+func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSelectedRequest) (*string, error) {
+	resp, err := s.wsdlService.DynSetServicesSelected(in)
+	if err != nil || *resp.Errors.HasErrors != "NO" {
+		return nil, err
+	}
+
+	done := make(chan (string), 1)
+	go func() {
+		b, err := json.Compress(in)
+		if err != nil {
+			done <- ""
+			return
+		}
+		done <- utils.GetSHA256Hash(string(b))
+	}()
+
+	var newInput wsdl.DynGetSimulationRequest
+	newInput.SessionHash = in.SessionHash
+	simul, err := s.wsdlService.DynGetSimulation(newInput)
+	if err != nil || simul == nil {
+		return nil, errors.New("Invalid Simulation")
+	}
+
+	token := <-done
+	if token == "" {
+		return nil, errors.New("Invalid token")
+	}
+	go s.cacheService.RefreshCache("simulation:"+token, simul, s.cacheService.CacheTimes.ShortCacheTime)
+
+	return &token, nil
+}
+
+func (s *Service) HandleDynGetSimulation(token string) (*wsdl.DynGetSimulationResponse, error) {
+	simul := cache.CheckCacheHit[wsdl.DynGetSimulationResponse](s.cacheService, "simulation:"+token)
+	if simul == nil {
+		return nil, errors.New("Simulation not found for token—cache may have expired")
+	}
+	return simul, nil
 }
