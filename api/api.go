@@ -43,8 +43,6 @@ func (a *Api) Start() {
 	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
 	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
-	//engine.POST("api/dynamic/product/check-set-services", a.handleDynCheckSetServices)
-	//engine.POST("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 	engine.GET("api/page/highlighted/tag", a.handleGetHighlightedTag)
 
 	//========================================================================
@@ -271,7 +269,6 @@ func (a *Api) handleSyncAllProducts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Product sync ended."})
 }
 
@@ -314,7 +311,6 @@ func (a *Api) handleListAllProducts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB failed: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"list": productList})
 }
 
@@ -372,7 +368,7 @@ func (a *Api) handleGetHighlightedTag(c *gin.Context) {
 	tagName, _ := a.Coordinator.HandleGetHighlightedTag()
 	if tagName == nil {
 		c.JSON(http.StatusOK, gin.H{"tag": "charter"}) // default
-	} else {
-		c.JSON(http.StatusOK, gin.H{"tag": *tagName})
+		return
 	}
+	c.JSON(http.StatusOK, gin.H{"tag": *tagName})
 }
