@@ -155,10 +155,25 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 	collectionName := "dyn_product_parameters"
 	id := prodCode
 
+	visitedSuccessfully := false
+	defer func() {
+		if visitedSuccessfully {
+			go func() {
+				pW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", id)
+				if pW != nil {
+					pW.VisitCount += 1
+					s.dbService.RefreshDB("product_index", id, pW)
+				}
+			}()
+		}
+	}()
+
 	if data := cache.CheckCacheHit[wsdl.ProductWithExtraData](s.cacheService, cacheKey); data != nil {
+		visitedSuccessfully = true
 		return data, nil
 	} else if data, _ = db.CheckDBHit[wsdl.ProductWithExtraData](s.dbService, collectionName, id); data != nil {
 		go s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
+		visitedSuccessfully = true
 		return data, nil
 	} else if newData, err := s.wsdlService.DynGetProductParameters(prodCode); err == nil {
 		*newData.Name = utils.SimplifyString(*newData.Name)
@@ -179,6 +194,7 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 			s.dbService.RefreshDB(collectionName, id, data)
 			s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
 		}()
+		visitedSuccessfully = true
 		return data, nil
 	} else {
 		return nil, err
@@ -269,17 +285,20 @@ func (s *Service) syncProductsToDB(products []*wsdl.Product) SyncMetadata {
 
 		tags := []string{}
 		enabled := true
+		var visitCount int64 = 0
 		if old != nil {
 			tags = old.Tags
 			if old.Enabled != nil {
 				enabled = *old.Enabled
 			}
+			visitCount = old.VisitCount
 		}
 
 		wrapped := wsdl.ProductWrapper{
-			Product: *product,
-			Tags:    tags,
-			Enabled: &enabled,
+			Product:    *product,
+			Tags:       tags,
+			Enabled:    &enabled,
+			VisitCount: visitCount,
 		}
 		s.dbService.RefreshDB(collectionName, codeStr, wrapped)
 
