@@ -48,15 +48,7 @@ func (l *Logger) Log(args ...any) {
 		fmt.Print(logLine)
 	}
 
-	l.writer.WriteString(logLine) // buffer it
-}
-
-func (l *Logger) Close() error {
-	err := l.writer.Flush()
-	if err != nil {
-		return err
-	}
-	return l.file.Close()
+	l.writer.WriteString(logLine)
 }
 
 func (l *Logger) TrackTime() func() {
