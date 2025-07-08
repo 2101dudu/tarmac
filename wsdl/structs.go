@@ -2373,9 +2373,10 @@ type PriceArray struct {
 
 // NOT AUTO-GENERATED
 type ProductWrapper struct {
-	Product Product  `json:"product"`
-	Tags    []string `json:"tags"`
-	Enabled *bool    `json:"enabled"`
+	Product    Product  `json:"product"`
+	Tags       []string `json:"tags"`
+	Enabled    *bool    `json:"enabled"`
+	VisitCount int64    `json:"visitCount"`
 }
 
 // Product was auto-generated from WSDL.
