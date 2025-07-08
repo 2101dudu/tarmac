@@ -433,15 +433,15 @@ func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSel
 		return nil, err
 	}
 
-	done := make(chan (string), 1)
-	go func() {
-		b, err := json.Compress(in)
-		if err != nil {
-			done <- ""
-			return
-		}
-		done <- utils.GetSHA256Hash(string(b))
-	}()
+	b, err := json.Compress(in)
+	if err != nil {
+		return nil, errors.New("Invalid token")
+	}
+	token := utils.GetSHA256Hash(string(b))
+	cachedSimul := cache.CheckCacheHit[wsdl.DynGetSimulationResponse](s.cacheService, "simulation:"+token)
+	if cachedSimul != nil {
+		return &token, nil
+	}
 
 	var newInput wsdl.DynGetSimulationRequest
 	newInput.SessionHash = in.SessionHash
@@ -450,10 +450,6 @@ func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSel
 		return nil, errors.New("Invalid Simulation")
 	}
 
-	token := <-done
-	if token == "" {
-		return nil, errors.New("Invalid token")
-	}
 	go s.cacheService.RefreshCache("simulation:"+token, simul, s.cacheService.CacheTimes.ShortCacheTime)
 
 	return &token, nil
