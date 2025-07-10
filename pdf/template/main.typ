@@ -68,7 +68,31 @@
 
 #entry("POLÍTICAS DE CANCELAMENTO", "Cancel Policies", policies, none)
 
-#entry("CONDIÇÕES", "Conditions", conditions, none)
-#entry("DESCRIÇÃO", "Description", description, none)
-#entry("PROGRAMA", "Program", program, none)
-#entry("OBSERVAÇÕES", "Observations", observations, none)
+
+#let cond = {
+  if conditions.text != "" {
+    entry("CONDIÇÕES", "Conditions", conditions, none)
+  }
+}
+#cond
+
+#let desc = {
+  if description.text != "" {
+    entry("DESCRIÇÃO", "Description", description, none)
+  }
+}
+#desc
+
+#let prog = {
+  if program.text != "" {
+    entry("PROGRAMA", "Program", program, none)
+  }
+}
+#prog
+
+#let obs = {
+  if observations.text != "" {
+    entry("OBSERVAÇÕES", "Observations", observations, none)
+  }
+}
+#obs

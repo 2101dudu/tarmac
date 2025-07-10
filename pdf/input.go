@@ -1,4 +1,4 @@
-package main
+package pdf
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ type GeneralInfo struct {
 type Service struct {
 	Icon   string
 	Desc   string
-	Qty    int
+	Qty    string
 	Status string
 	From   string
 	To     string
@@ -26,9 +26,9 @@ type Service struct {
 
 type Price struct {
 	Desc       string
-	Qty        int
-	UnitGross  float32
-	TotalGross float32
+	Qty        string
+	UnitGross  string
+	TotalGross string
 }
 
 type Policy struct {
@@ -43,7 +43,7 @@ type PDFData struct {
 	GeneralInfo GeneralInfo
 	Services    []Service
 	Prices      []Price
-	TotalPrice  float32
+	TotalPrice  string
 	Policies    []Policy
 
 	Conditions   string
@@ -114,7 +114,7 @@ func (p *PDFData) fillAllServices() string {
 #let allServices = {
 `
 	for _, entry := range p.Services {
-		newS := `("%s", "%s", "%d", "%s", "%s", "%s")`
+		newS := `("%s", "%s", "%s", "%s", "%s", "%s")`
 		newS = fmt.Sprintf(newS, entry.Icon, entry.Desc, entry.Qty, entry.Status, entry.From, entry.To)
 
 		s += "\n" + newS
@@ -130,7 +130,7 @@ func (p *PDFData) fillAllPrices() string {
 #let allPrices = {
 `
 	for _, entry := range p.Prices {
-		newS := `("%s", "%d", "%.2f", "%.2f")`
+		newS := `("%s", "%s", "%s", "%s")`
 		newS = fmt.Sprintf(newS, entry.Desc, entry.Qty, entry.UnitGross, entry.TotalGross)
 
 		s += "\n" + newS
@@ -140,7 +140,7 @@ func (p *PDFData) fillAllPrices() string {
 
 
 #let totalPrice = {
-  "%.2f"
+  "%s"
 }
 `
 	return fmt.Sprintf(s, p.TotalPrice)
