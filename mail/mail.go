@@ -2,6 +2,7 @@ package mail
 
 import (
 	"log"
+	"os"
 
 	"github.com/resend/resend-go/v2"
 )
@@ -9,8 +10,6 @@ import (
 type Client struct {
 	AgencyEmail         string
 	InternalAgencyEmail string
-	UserEmail           string
-	PDFFilePath         string
 	APIKey              string
 }
 
@@ -26,9 +25,15 @@ func (m *Client) Start() *Service {
 	}
 }
 
-func (m *Service) sendEmail(from, to string) {
+func (m *Service) sendEmail(from, to, pdfFilePath string) {
+	f, err := os.ReadFile(pdfFilePath)
+	log.Println(len(f))
+	if err != nil {
+		log.Println(err)
+		return
+	}
 	attachment := &resend.Attachment{ // TODO: check if the pdf is less than 40MB
-		Path:     m.mailClient.PDFFilePath,
+		Content:  f,
 		Filename: "Orçamento.pdf",
 	}
 
@@ -45,13 +50,13 @@ func (m *Service) sendEmail(from, to string) {
 		Attachments: []*resend.Attachment{attachment},
 	}
 
-	_, err := m.resendClient.Emails.Send(params)
+	_, err = m.resendClient.Emails.Send(params)
 	if err != nil {
-		log.Println("Failed to send email to", to)
+		log.Println("Failed to send email to", to, ":", err)
 	}
 }
 
-func (m *Service) SendEmails() {
-	go m.sendEmail(m.mailClient.InternalAgencyEmail, m.mailClient.AgencyEmail) // to travel agency
-	go m.sendEmail(m.mailClient.AgencyEmail, m.mailClient.UserEmail)           // to user
+func (m *Service) SendEmails(pdfFilePath, userEmail string) {
+	go m.sendEmail(m.mailClient.InternalAgencyEmail, m.mailClient.AgencyEmail, pdfFilePath) // to travel agency
+	go m.sendEmail(m.mailClient.AgencyEmail, userEmail, pdfFilePath)                        // to user
 }

@@ -43,6 +43,7 @@ func (a *Api) Start() {
 	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
 	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
+	engine.POST("api/dynamic/product/send-email", a.handleSendEmail)
 	engine.GET("api/page/highlighted/tag", a.handleGetHighlightedTag)
 
 	//========================================================================
@@ -72,7 +73,7 @@ func (a *Api) Start() {
 	c.Start()
 	//========================================================================
 
-	engine.Run(":8080")
+	engine.Run("192.168.1.120:8080")
 }
 
 func (a *Api) handleGetMasterData(c *gin.Context) {
@@ -189,6 +190,26 @@ func (a *Api) handleDynGetSimulation(c *gin.Context) {
 		return
 	}
 	simul, err := a.Coordinator.HandleDynGetSimulation(token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, simul)
+}
+
+func (a *Api) handleSendEmail(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errors.New("Missing token")})
+		return
+	}
+	var contact coordinator.ContactInfo
+	if err := c.ShouldBindJSON(&contact); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	simul, err := a.Coordinator.HandleSendEmail(token, contact)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

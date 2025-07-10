@@ -10,6 +10,7 @@ import (
 	"tarmac/logger"
 	"tarmac/utils"
 	"tarmac/wsdl"
+	"time"
 )
 
 func (s *Service) HandleGetMasterData(url string) (*wsdl.SearchProductMasterDataResponse, error) {
@@ -469,7 +470,7 @@ func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSel
 		return nil, errors.New("Invalid Simulation")
 	}
 
-	go s.cacheService.RefreshCache("simulation:"+token, simul, s.cacheService.CacheTimes.ShortCacheTime)
+	go s.cacheService.RefreshCache("simulation:"+token, simul, s.cacheService.CacheTimes.ShortCacheTime+10*time.Minute)
 
 	return &token, nil
 }
@@ -479,5 +480,34 @@ func (s *Service) HandleDynGetSimulation(token string) (*wsdl.DynGetSimulationRe
 	if simul == nil {
 		return nil, errors.New("Simulation not found for token—cache may have expired")
 	}
+	return simul, nil
+}
+
+func (s *Service) HandleSendEmail(token string, info ContactInfo) (*wsdl.DynGetSimulationResponse, error) {
+	simul := cache.CheckCacheHit[wsdl.DynGetSimulationResponse](s.cacheService, "simulation:"+token)
+	if simul == nil {
+		return nil, errors.New("Simulation not found for token—cache may have expired")
+	}
+
+	newQuotationNumber := 1000000
+	oldQuotationNumber, _ := db.CheckDBHit[int](s.dbService, "quotations", "quotation_number")
+	if oldQuotationNumber != nil {
+		newQuotationNumber = *oldQuotationNumber + 1
+	}
+	go s.dbService.RefreshDB("quotations", "quotation_number", newQuotationNumber)
+
+	// generate PDF
+	pdf := fillPDF(simul, info.Name, info.Surname, newQuotationNumber)
+
+	fp, err := pdf.GeneratePDF()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	fmt.Println("PDF generated at", fp)
+
+	// send email
+	s.mailService.SendEmails(fp, info.Email)
+
 	return simul, nil
 }
