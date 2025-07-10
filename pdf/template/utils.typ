@@ -1,8 +1,9 @@
 #let accent = rgb("#D5F5D9")
 #let gray = rgb("#1111")
 
-#let plane = {image("assets/plane.svg", width: 14pt, fit: "stretch")}
-#let bed = {image("assets/bed.svg", width: 14pt, fit: "stretch")}
+#let AVI = {image("assets/plane.svg", width: 14pt, fit: "stretch", alt: "plane")}
+#let ALOJ = {image("assets/bed.svg", width: 14pt, fit: "stretch", alt: "hotel")}
+#let TRF = {image("assets/transfer.svg", width: 14pt, fit: "stretch", alt: "transfer")}
 
 #let title(name, name_en, size: 7pt, flexed: false) = {
   strong(name)

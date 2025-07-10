@@ -32,7 +32,7 @@ func fillServices(simul []*wsdl.DynResServices) []pdf.Service {
 			continue
 		}
 		p := pdf.Service{
-			Icon:   "bed", // get from type s.type
+			Icon:   extractPointer(s.Type),
 			Desc:   extractPointer(s.Description),
 			Qty:    extractPointer(s.Quant),
 			Status: extractPointer(s.Status),

@@ -507,7 +507,7 @@ func (s *Service) HandleSendEmail(token string, info ContactInfo) (*wsdl.DynGetS
 	fmt.Println("PDF generated at", fp)
 
 	// send email
-	s.mailService.SendEmails(fp, info.Email)
+	//s.mailService.SendEmails(fp, info.Email)
 
 	return simul, nil
 }

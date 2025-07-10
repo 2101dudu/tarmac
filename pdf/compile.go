@@ -21,7 +21,7 @@ func (p *PDFData) GeneratePDF() (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	// defer os.Remove(filePath)
+	defer os.Remove(filePath)
 
 	p.fillPDF(f)
 	return p.compilePDF()

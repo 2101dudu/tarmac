@@ -114,7 +114,7 @@ func (p *PDFData) fillAllServices() string {
 #let allServices = {
 `
 	for _, entry := range p.Services {
-		newS := `("%s", "%s", "%s", "%s", "%s", "%s")`
+		newS := `(%s, "%s", "%s", "%s", "%s", "%s")`
 		newS = fmt.Sprintf(newS, entry.Icon, entry.Desc, entry.Qty, entry.Status, entry.From, entry.To)
 
 		s += "\n" + newS
