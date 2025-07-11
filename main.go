@@ -14,8 +14,12 @@ import (
 func main() {
 	vars := env.LoadEnvFile()
 
-	wsdlClient := wsdl.Client{URL: vars.Endpoints.APIEndpoint, Namespace: wsdl.Namespace, System: vars.Credentials.System, Client: vars.Credentials.Client, Username: vars.Credentials.Username, Password: vars.Credentials.Password}
-	wsdlService := wsdlClient.NewWsdlService()
+	var clients []wsdl.Client
+	for i, _ := range vars.SOAPServices {
+		clients = append(clients, wsdl.Client{URL: vars.SOAPServices[i].APIEndpoint, Namespace: wsdl.Namespace, System: vars.SOAPServices[i].System, Client: vars.SOAPServices[i].Client, Username: vars.SOAPServices[i].Username, Password: vars.SOAPServices[i].Password})
+	}
+	wsdlClient := wsdl.ClientList{Clients: clients}
+	wsdlServices := wsdlClient.NewWsdlService()
 
 	cacheClient := cache.Client{Addr: vars.Endpoints.CacheEndpoint, ShortCacheTime: vars.CacheTimes.ShortCacheTime, MediumCacheTime: vars.CacheTimes.MediumCacheTime, LongCacheTime: vars.CacheTimes.LongCacheTime}
 	cacheService := cacheClient.NewCacheService()
@@ -29,7 +33,7 @@ func main() {
 	mailClient := mail.Client{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
 	mailService := mailClient.Start()
 
-	coordinatorClient := coordinator.Client{WSDLService: wsdlService, CacheService: cacheService, DBService: dbService, MailService: mailService}
+	coordinatorClient := coordinator.Client{WSDLService: wsdlServices, CacheService: cacheService, DBService: dbService, MailService: mailService}
 	coordinatorService := coordinatorClient.NewCoordinatorService()
 
 	api := api.Api{Coordinator: coordinatorService, AdminHashedPassword: vars.Credentials.AdminHashedPassword}

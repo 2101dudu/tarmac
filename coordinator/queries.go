@@ -11,6 +11,8 @@ import (
 	"tarmac/utils"
 	"tarmac/wsdl"
 	"time"
+
+	js "encoding/json"
 )
 
 func (s *Service) HandleGetMasterData(url string) (*wsdl.SearchProductMasterDataResponse, error) {
@@ -36,32 +38,6 @@ func (s *Service) HandleGetMasterData(url string) (*wsdl.SearchProductMasterData
 	}()
 
 	return data, err
-}
-
-func (s *Service) HandleSearchProduct(url string) (*wsdl.SearchProductResponse, error) {
-	key := utils.GetSHA256Hash(url)
-	collectionName := "search_product"
-	id := "search_product"
-
-	data, refreshDB, refreshCache, err := getData(
-		s, key, collectionName, id,
-		s.wsdlService.SearchProducts,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	go func() {
-		if refreshDB {
-			s.dbService.RefreshDB(collectionName, id, data)
-		}
-		if refreshCache {
-			s.cacheService.RefreshCache(key, data, s.cacheService.CacheTimes.LongCacheTime)
-		}
-	}()
-
-	return data, nil
 }
 
 func (s *Service) HandleSearchProductWithBody(query ProductQuery, url string) ([]*wsdl.Product, *string, *bool, error) {
@@ -110,7 +86,7 @@ func (s *Service) fetchProductsWithFallback(query ProductQuery, cacheKey, collec
 		refreshDB = true
 		productList, dbErr := db.GetAllProducts[wsdl.ProductWrapper](s.dbService, "product_index")
 		if dbErr != nil {
-			return nil, false, fmt.Errorf("DB fallback failed: %w", dbErr)
+			return nil, false, errors.New("DB fallback failed: " + dbErr.Error())
 		}
 		queriedList = wsdl.ApplyQueryToData(productList, query.Country, query.Location, query.DepDate, query.Tag)
 	}
@@ -176,14 +152,16 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 		go s.cacheService.RefreshCache(cacheKey, data, s.cacheService.CacheTimes.MediumCacheTime)
 		visitedSuccessfully = true
 		return data, nil
-	} else if newData, err := s.wsdlService.DynGetProductParameters(prodCode); err == nil {
-		*newData.Name = utils.SimplifyString(*newData.Name)
-		productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", id)
+	} else if productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", id); productW != nil {
+		codePart, service := extractCodeAndService(*productW.Product.Code)
 
-		if productW == nil {
-			return nil, errors.New("No product")
+		newData, err := s.wsdlService.DynGetProductParameters(codePart, service)
+		if err != nil {
+			return nil, err
 		}
 
+		*newData.Name = utils.SimplifyString(*newData.Name)
+		*newData.Code = *productW.Product.Code // ease-of-use. translate product "202" back into "202-X"
 		data = &wsdl.ProductWithExtraData{
 			Data:             *newData,
 			DescriptionArray: extractPointer(productW.Product.TextContentsArray),
@@ -198,7 +176,7 @@ func (s *Service) HandleDynGetProductParameters(prodCode string) (*wsdl.ProductW
 		visitedSuccessfully = true
 		return data, nil
 	} else {
-		return nil, err
+		return nil, errors.New("No product")
 	}
 }
 
@@ -211,9 +189,18 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 
 	// Spawn goroutine to call SOAP
 	go func() {
-		resp, err := s.wsdlService.DynSearchProductAvailableServices(in)
+		productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", *in.ProductCode)
+		if productW == nil {
+			logger.Log.Log("Product does not exist: ", *in.ProductCode)
+			s.cacheService.RefreshCache(cacheKey+":status", "error", s.cacheService.CacheTimes.ShortCacheTime)
+			return
+		}
+		codePart, service := extractCodeAndService(*productW.Product.Code)
+		*in.ProductCode = codePart
+
+		resp, err := s.wsdlService.DynSearchProductAvailableServices(in, service)
 		if err != nil {
-			logger.Log.Log("Async search failed:", err)
+			logger.Log.Log("Async search failed: ", err)
 			s.cacheService.RefreshCache(cacheKey+":status", "error", s.cacheService.CacheTimes.ShortCacheTime)
 			return
 		}
@@ -278,9 +265,6 @@ func (s *Service) syncProductsToDB(products []*wsdl.Product) SyncMetadata {
 			continue
 		}
 		codeStr := *product.Code
-		if _, err := strconv.Atoi(codeStr); err != nil {
-			continue
-		}
 
 		old, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, collectionName, codeStr)
 
@@ -447,10 +431,25 @@ func (s *Service) HandleGetHighlightedTag() (*string, bool) {
 	return db.CheckDBHit[string](s.dbService, "highlighted-tag", "highlighted-tag")
 }
 
-func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSelectedRequest) (*string, error) {
-	resp, err := s.wsdlService.DynSetServicesSelected(in)
-	if err != nil || *resp.Errors.HasErrors != "NO" {
+func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSelectedRequest, prodCode string) (*string, error) {
+	productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", prodCode)
+	if productW == nil {
+		return nil, errors.New("Product does not exist: " + prodCode)
+	}
+
+	_, service := extractCodeAndService(*productW.Product.Code)
+
+	d, _ := js.MarshalIndent(in, "", "\t")
+	fmt.Println(string(d))
+	resp, err := s.wsdlService.DynSetServicesSelected(in, service)
+	r, _ := js.MarshalIndent(resp, "", "\t")
+	fmt.Println(string(r))
+
+	if err != nil {
 		return nil, err
+	}
+	if *resp.Errors.HasErrors != "NO" {
+		return nil, errors.New(*resp.Errors.HasErrors)
 	}
 
 	b, err := json.Compress(in)
@@ -465,7 +464,7 @@ func (s *Service) HandleDynSetServicesSelectedAndGetToken(in wsdl.DynServicesSel
 
 	var newInput wsdl.DynGetSimulationRequest
 	newInput.SessionHash = in.SessionHash
-	simul, err := s.wsdlService.DynGetSimulation(newInput)
+	simul, err := s.wsdlService.DynGetSimulation(newInput, service)
 	if err != nil || simul == nil {
 		return nil, errors.New("Invalid Simulation")
 	}

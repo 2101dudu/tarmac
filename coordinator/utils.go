@@ -3,6 +3,8 @@ package coordinator
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
+	"strings"
 )
 
 func generateToken() string {
@@ -18,4 +20,11 @@ func extractPointer[T any](in *T) T {
 		out = *in
 	}
 	return out
+}
+
+func extractCodeAndService(in string) (string, int) {
+	parts := strings.SplitN(in, "-", 2)
+	codePart := parts[0]
+	service, _ := strconv.Atoi(parts[1])
+	return codePart, service
 }

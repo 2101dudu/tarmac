@@ -1,9 +1,7 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,7 +33,6 @@ func (a *Api) Start() {
 	}))
 
 	engine.GET("api/get/master-data", a.handleGetMasterData)
-	engine.GET("api/search/product", a.handleSearchProduct)
 	engine.POST("api/search/product", a.handleSearchProductWithBody)
 	engine.GET("api/search/product/page", a.handleSearchProductPagination)
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
@@ -85,15 +82,6 @@ func (a *Api) handleGetMasterData(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 }
 
-func (a *Api) handleSearchProduct(c *gin.Context) {
-	data, err := a.Coordinator.HandleSearchProduct(c.Request.URL.String())
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, data)
-}
-
 func (a *Api) handleSearchProductWithBody(c *gin.Context) {
 	var query coordinator.ProductQuery
 	if err := c.ShouldBindJSON(&query); err != nil {
@@ -125,12 +113,6 @@ func (a *Api) handleSearchProductPagination(c *gin.Context) {
 
 func (a *Api) handleDynGetProductParameters(c *gin.Context) {
 	prodCodeRaw := c.Param("prodCode")
-	_, err := strconv.Atoi(prodCodeRaw)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	data, err := a.Coordinator.HandleDynGetProductParameters(prodCodeRaw)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -166,16 +148,14 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 }
 
 func (a *Api) handleDynSetServicesSelectedAndGetToken(c *gin.Context) {
+	prodCode := c.Query("prodCode")
 	var input wsdl.DynServicesSelectedRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	d, _ := json.MarshalIndent(input, "", "    ") // temp
-	fmt.Println(string(d))                        // temp
 
-	token, err := a.Coordinator.HandleDynSetServicesSelectedAndGetToken(input)
-	fmt.Println(*token) // temp
+	token, err := a.Coordinator.HandleDynSetServicesSelectedAndGetToken(input, prodCode)
 	if err != nil || token == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

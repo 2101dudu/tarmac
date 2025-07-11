@@ -8,14 +8,14 @@ import (
 )
 
 type Client struct {
-	WSDLService  *wsdl.Service
+	WSDLService  *wsdl.ServiceList
 	CacheService *cache.Service
 	DBService    *db.Service
 	MailService  *mail.Service
 }
 
 type Service struct {
-	wsdlService  *wsdl.Service
+	wsdlService  *wsdl.ServiceList
 	cacheService *cache.Service
 	dbService    *db.Service
 	mailService  *mail.Service

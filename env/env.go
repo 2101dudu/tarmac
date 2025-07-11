@@ -8,6 +8,15 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type SoapService struct {
+	System   string
+	Client   string
+	Username string
+	Password string
+
+	APIEndpoint string
+}
+
 type CacheTimes struct {
 	ShortCacheTime  time.Duration
 	MediumCacheTime time.Duration
@@ -15,17 +24,12 @@ type CacheTimes struct {
 }
 
 type Credentials struct {
-	System              string
-	Client              string
-	Username            string
-	Password            string
 	DBUsername          string
 	DBPassword          string
 	AdminHashedPassword string
 }
 
 type Endpoints struct {
-	APIEndpoint   string
 	CacheEndpoint string
 	DBEndpoint    string
 }
@@ -41,11 +45,48 @@ type EmailCredentials struct {
 }
 
 type Vars struct {
+	SOAPServices     []*SoapService
 	Credentials      *Credentials
 	CacheTimes       *CacheTimes
 	Endpoints        *Endpoints
 	Logs             *Logs
 	EmailCredentials *EmailCredentials
+}
+
+func loadSoapServiceSoltropico() *SoapService {
+	return &SoapService{
+		System:      os.Getenv("SYSTEM_SOLTROPICO"),
+		Client:      os.Getenv("CLIENT_SOLTROPICO"),
+		Username:    os.Getenv("USERNAME_SOLTROPICO"),
+		Password:    os.Getenv("PASSWORD_SOLTROPICO"),
+		APIEndpoint: os.Getenv("API_ENDPOINT_SOLTROPICO"),
+	}
+}
+func loadSoapServiceEgotravel() *SoapService {
+	return &SoapService{
+		System:      os.Getenv("SYSTEM_EGOTRAVEL"),
+		Client:      os.Getenv("CLIENT_EGOTRAVEL"),
+		Username:    os.Getenv("USERNAME_EGOTRAVEL"),
+		Password:    os.Getenv("PASSWORD_EGOTRAVEL"),
+		APIEndpoint: os.Getenv("API_ENDPOINT_EGOTRAVEL"),
+	}
+}
+func loadSoapServiceViajarTours() *SoapService {
+	return &SoapService{
+		System:      os.Getenv("SYSTEM_VIAJARTOURS"),
+		Client:      os.Getenv("CLIENT_VIAJARTOURS"),
+		Username:    os.Getenv("USERNAME_VIAJARTOURS"),
+		Password:    os.Getenv("PASSWORD_VIAJARTOURS"),
+		APIEndpoint: os.Getenv("API_ENDPOINT_VIAJARTOURS"),
+	}
+}
+
+func loadSoapServices() []*SoapService {
+	var services []*SoapService
+	// services = append(services, loadSoapServiceEgotravel()) // -- server is down
+	services = append(services, loadSoapServiceSoltropico())
+	services = append(services, loadSoapServiceViajarTours())
+	return services
 }
 
 func loadCacheTimes() *CacheTimes {
@@ -69,10 +110,6 @@ func loadCacheTimes() *CacheTimes {
 
 func loadCredentials() *Credentials {
 	return &Credentials{
-		System:              os.Getenv("SYSTEM"),
-		Client:              os.Getenv("CLIENT"),
-		Username:            os.Getenv("USERNAME"),
-		Password:            os.Getenv("PASSWORD"),
 		DBUsername:          os.Getenv("DB_USERNAME"),
 		DBPassword:          os.Getenv("DB_PASSWORD"),
 		AdminHashedPassword: os.Getenv("ADMIN_HASHED_PASSWORD"),
@@ -81,7 +118,6 @@ func loadCredentials() *Credentials {
 
 func loadEndpoints() *Endpoints {
 	return &Endpoints{
-		APIEndpoint:   os.Getenv("API_ENDPOINT"),
 		CacheEndpoint: os.Getenv("CACHE_ENDPOINT"),
 		DBEndpoint:    os.Getenv("DB_ENDPOINT"),
 	}
@@ -107,6 +143,7 @@ func LoadEnvFile() Vars {
 		log.Fatal("Error loading .env file")
 	}
 	return Vars{
+		SOAPServices:     loadSoapServices(),
 		CacheTimes:       loadCacheTimes(),
 		Credentials:      loadCredentials(),
 		Endpoints:        loadEndpoints(),

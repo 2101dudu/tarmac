@@ -1,6 +1,8 @@
 package wsdl
 
 import (
+	"errors"
+	"strconv"
 	"time"
 
 	"github.com/fiorix/wsdl2go/soap"
@@ -15,73 +17,122 @@ type Client struct {
 	Password  string
 }
 
+type ClientList struct {
+	Clients []Client
+}
+
 type Service struct {
 	soapClient      *wbs_pkt_methodsSoap
 	soapCredentials *CredentialsStruct
 }
 
-func (c *Client) NewWsdlService() *Service {
-	return &Service{
-		soapClient: NewWbs_pkt_methodsSoap(&soap.Client{
-			URL:       c.URL,
+type ServiceList struct {
+	Services map[int]*Service
+}
+
+func (c *ClientList) NewWsdlService() *ServiceList {
+	services := make(map[int]*Service)
+
+	for i, cli := range c.Clients {
+		soap := NewWbs_pkt_methodsSoap(&soap.Client{
+			URL:       cli.URL,
 			Namespace: Namespace,
-		}).(*wbs_pkt_methodsSoap),
-		soapCredentials: &CredentialsStruct{
-			System:   &c.System,
-			Client:   &c.Client,
-			Username: &c.Username,
-			Password: &c.Password,
-		},
+		}).(*wbs_pkt_methodsSoap)
+
+		cred := &CredentialsStruct{
+			System:   &cli.System,
+			Client:   &cli.Client,
+			Username: &cli.Username,
+			Password: &cli.Password,
+		}
+
+		fullService := &Service{soapClient: soap, soapCredentials: cred}
+
+		services[i] = fullService
+	}
+
+	return &ServiceList{
+		Services: services,
 	}
 }
 
-func (s *Service) SearchProducts() (*SearchProductResponse, error) {
-	return s.soapClient.SearchProducts(&SearchProductRequest{
-		Credentials: s.soapCredentials,
-	})
+func (s *ServiceList) SearchProductMasterData() (*SearchProductMasterDataResponse, error) {
+	final := &SearchProductMasterDataResponse{
+		SearchProductMasterDataArray: &SearchProductMasterData{
+			CountriesArray: &CountryArray{Items: []*Country{}},
+			LocationsArray: &LocationArray{Items: []*Location{}},
+		},
+	}
+	for _, service := range s.Services {
+		res, err := service.soapClient.SearchProductMasterData(&SearchProductMasterDataRequest{ // TODO: check if master data is the same for all
+			Credentials: service.soapCredentials,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		final.SearchProductMasterDataArray.CountriesArray.Items = append(final.SearchProductMasterDataArray.CountriesArray.Items, res.SearchProductMasterDataArray.CountriesArray.Items...)
+		final.SearchProductMasterDataArray.LocationsArray.Items = append(final.SearchProductMasterDataArray.LocationsArray.Items, res.SearchProductMasterDataArray.LocationsArray.Items...)
+	}
+
+	return final, nil
 }
 
-func (s *Service) SearchProductMasterData() (*SearchProductMasterDataResponse, error) {
-	return s.soapClient.SearchProductMasterData(&SearchProductMasterDataRequest{
-		Credentials: s.soapCredentials,
-	})
-}
-
-func (s *Service) DynGetProductParameters(prodCodeRaw string) (*DynProductParametersResponse, error) {
-	return s.soapClient.DynGetProductParameters(&DynProductParametersRequest{
-		Credentials: s.soapCredentials,
+func (s *ServiceList) DynGetProductParameters(prodCodeRaw string, serviceID int) (*DynProductParametersResponse, error) {
+	return s.Services[serviceID].soapClient.DynGetProductParameters(&DynProductParametersRequest{
+		Credentials: s.Services[serviceID].soapCredentials,
 		Productcode: &prodCodeRaw,
 	})
 }
 
-func (s *Service) DynSearchProductAvailableServices(in DynProductAvailableServicesRequest) (*DynProductAvailableServicesResponse, error) {
-	in.Credentials = s.soapCredentials
-	return s.soapClient.DynSearchProductAvailableServices(&in)
+func (s *ServiceList) DynSearchProductAvailableServices(in DynProductAvailableServicesRequest, serviceID int) (*DynProductAvailableServicesResponse, error) {
+	in.Credentials = s.Services[serviceID].soapCredentials
+	return s.Services[serviceID].soapClient.DynSearchProductAvailableServices(&in)
 }
 
-func (s *Service) DynSetServicesSelected(in DynServicesSelectedRequest) (*DynServicesSelectedResponse, error) {
-	in.Credentials = s.soapCredentials
-	return s.soapClient.DynSetServicesSelected(&in)
+func (s *ServiceList) DynSetServicesSelected(in DynServicesSelectedRequest, serviceID int) (*DynServicesSelectedResponse, error) {
+	in.Credentials = s.Services[serviceID].soapCredentials
+	return s.Services[serviceID].soapClient.DynSetServicesSelected(&in)
 }
 
-func (s *Service) DynGetOptionalsSelected(in DynGetOptionalsSelectedRequest) (*DynGetOptionalsSelectedResponse, error) {
-	in.Credentials = s.soapCredentials
-	return s.soapClient.DynGetOptionalsSelected(&in)
+func (s *ServiceList) DynGetOptionalsSelected(in DynGetOptionalsSelectedRequest, serviceID int) (*DynGetOptionalsSelectedResponse, error) {
+	in.Credentials = s.Services[serviceID].soapCredentials
+	return s.Services[serviceID].soapClient.DynGetOptionalsSelected(&in)
 }
 
-func (s *Service) DynGetSimulation(in DynGetSimulationRequest) (*DynGetSimulationResponse, error) {
-	in.Credentials = s.soapCredentials
-	return s.soapClient.DynGetSimulation(&in)
+func (s *ServiceList) DynGetSimulation(in DynGetSimulationRequest, serviceID int) (*DynGetSimulationResponse, error) {
+	in.Credentials = s.Services[serviceID].soapCredentials
+	return s.Services[serviceID].soapClient.DynGetSimulation(&in)
 }
 
-func (s *Service) SearchProductsWithBody(in SearchProductRequest) (*SearchProductResponse, error) {
-	in.Credentials = s.soapCredentials
-	return s.soapClient.SearchProducts(&in)
-}
-
-func (s *Service) SearchProductsWithBodyNow(in SearchProductRequest) (*SearchProductResponse, error) {
-	in.Credentials = s.soapCredentials
+func (s *ServiceList) SearchProductsWithBodyNow(in SearchProductRequest) (*SearchProductResponse, error) {
 	depDateString := time.Now().Format(time.DateOnly)
 	in.DepDate = &depDateString
-	return s.soapClient.SearchProducts(&in)
+
+	var prodArray []*Product
+	tp := 0
+	for i, service := range s.Services {
+		in.Credentials = service.soapCredentials
+
+		resp, err := service.soapClient.SearchProducts(&in)
+		if err != nil {
+			return nil, errors.New("Invalid service: " + *service.soapCredentials.Client + ": " + err.Error())
+		}
+		t, err := strconv.Atoi(*resp.TotalProducts)
+		if err != nil {
+			return nil, errors.New("Invalid number: " + *resp.TotalProducts)
+		}
+		tp += t
+		prodArray = append(prodArray, resp.ProductArray.Items...)
+
+		for _, prod := range resp.ProductArray.Items {
+			*prod.Code += "-" + strconv.Itoa(i)
+		}
+	}
+
+	totalProductsString := strconv.Itoa(tp)
+	return &SearchProductResponse{TotalProducts: &totalProductsString, ProductArray: &ProductArray{
+		Items: prodArray,
+	},
+	}, nil
 }
