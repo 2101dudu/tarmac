@@ -21,6 +21,10 @@ func main() {
 	wsdlClient := wsdl.ClientList{Clients: clients}
 	wsdlServices := wsdlClient.NewWsdlService()
 
+	// TODO: make a ping test to see what servers are down
+	// ensure that, if a server is down, that it's discarded
+	// but also note that the service id (x-2) has to be the same
+
 	cacheClient := cache.Client{Addr: vars.Endpoints.CacheEndpoint, ShortCacheTime: vars.CacheTimes.ShortCacheTime, MediumCacheTime: vars.CacheTimes.MediumCacheTime, LongCacheTime: vars.CacheTimes.LongCacheTime}
 	cacheService := cacheClient.NewCacheService()
 

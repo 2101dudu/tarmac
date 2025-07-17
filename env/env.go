@@ -80,12 +80,33 @@ func loadSoapServiceViajarTours() *SoapService {
 		APIEndpoint: os.Getenv("API_ENDPOINT_VIAJARTOURS"),
 	}
 }
+func loadSoapServiceLusanova() *SoapService {
+	return &SoapService{
+		System:      os.Getenv("SYSTEM_LUSANOVA"),
+		Client:      os.Getenv("CLIENT_LUSANOVA"),
+		Username:    os.Getenv("USERNAME_LUSANOVA"),
+		Password:    os.Getenv("PASSWORD_LUSANOVA"),
+		APIEndpoint: os.Getenv("API_ENDPOINT_LUSANOVA"),
+	}
+}
+func loadSoapServiceViagensTempo() *SoapService {
+	return &SoapService{
+		System:      os.Getenv("SYSTEM_VIAGENSTEMPO"),
+		Client:      os.Getenv("CLIENT_VIAGENSTEMPO"),
+		Username:    os.Getenv("USERNAME_VIAGENSTEMPO"),
+		Password:    os.Getenv("PASSWORD_VIAGENSTEMPO"),
+		APIEndpoint: os.Getenv("API_ENDPOINT_VIAGENSTEMPO"),
+	}
+}
 
+// when adding new services, ensure they are added from the bottom
 func loadSoapServices() []*SoapService {
 	var services []*SoapService
-	// services = append(services, loadSoapServiceEgotravel()) // -- server is down
+	services = append(services, loadSoapServiceEgotravel())
 	services = append(services, loadSoapServiceSoltropico())
 	services = append(services, loadSoapServiceViajarTours())
+	services = append(services, loadSoapServiceLusanova())
+	services = append(services, loadSoapServiceViagensTempo())
 	return services
 }
 
