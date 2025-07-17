@@ -39,19 +39,21 @@ func ExtractProductQueryFromMap(raw map[string]any) ProductQuery {
 }
 
 type ContactInfo struct {
-	Name        string `json:"Name"`
-	Surname     string `json:"Surname"`
-	Email       string `json:"Email"`
-	Phone       string `json:"Phone"`
-	DateOfBirth string `json:"DateOfBirth"`
+	Name            string `json:"Name"`
+	Surname         string `json:"Surname"`
+	Email           string `json:"Email"`
+	Phone           string `json:"Phone"`
+	DateOfBirth     string `json:"DateOfBirth"`
+	WantsNewsletter string `json:"WantsNewsletter"`
 }
 
 func ExtractContactInfoFromMap(raw map[string]any) ContactInfo {
 	return ContactInfo{
-		Name:        utils.ExtractStringField(raw, "Name"),
-		Surname:     utils.ExtractStringField(raw, "Surname"),
-		Email:       utils.ExtractStringField(raw, "Email"),
-		Phone:       utils.ExtractStringField(raw, "Phone"),
-		DateOfBirth: utils.ExtractStringField(raw, "DateOfBirth"),
+		Name:            utils.ExtractStringField(raw, "Name"),
+		Surname:         utils.ExtractStringField(raw, "Surname"),
+		Email:           utils.ExtractStringField(raw, "Email"),
+		Phone:           utils.ExtractStringField(raw, "Phone"),
+		DateOfBirth:     utils.ExtractStringField(raw, "DateOfBirth"),
+		WantsNewsletter: utils.ExtractStringField(raw, "WantsNewsletter"),
 	}
 }

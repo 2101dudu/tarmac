@@ -508,5 +508,9 @@ func (s *Service) HandleSendEmail(token string, info ContactInfo) (*wsdl.DynGetS
 	// send email
 	//s.mailService.SendEmails(fp, info.Email)
 
+	// make api call to store email on mailchimp
+	// TODO:
+	// if info.WantsNewsletter == "true" { }
+
 	return simul, nil
 }
