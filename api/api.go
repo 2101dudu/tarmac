@@ -142,12 +142,12 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 		return
 	}
 
-	status, resp, token, hasMore, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
+	status, resp, flightsToken, hasMoreFlights, hotelsToken, hasMoreHotels, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp, "token": token, "hasMore": hasMore})
+	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp, "flightsToken": flightsToken, "hasMoreFlights": hasMoreFlights, "hotelsToken": hotelsToken, "hasMoreHotels": hasMoreHotels})
 }
 
 func (a *Api) handleDynSearchProductAvailableServicesFlightsPagination(c *gin.Context) {
@@ -165,7 +165,20 @@ func (a *Api) handleDynSearchProductAvailableServicesFlightsPagination(c *gin.Co
 	c.JSON(http.StatusOK, gin.H{"flights": flights, "hasMore": hasMore})
 }
 
-func (a *Api) handleDynSearchProductAvailableServicesHotelsPagination(c *gin.Context) {}
+func (a *Api) handleDynSearchProductAvailableServicesHotelsPagination(c *gin.Context) {
+	token, cursor, limit, err := parsePaginationParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hotels, hasMore, err := a.Coordinator.HandleDynSearchProductAvailableServicesHotelsPagination(token, cursor, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"hotels": hotels, "hasMore": hasMore})
+}
 
 func (a *Api) handleDynSearchProductAvailableServicesHotelRoomsPagination(c *gin.Context) {}
 

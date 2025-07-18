@@ -205,6 +205,8 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 			return
 		}
 
+		*resp.Name = utils.SimplifyString(*resp.Name)
+
 		s.cacheService.RefreshCache(cacheKey+":data", resp, s.cacheService.CacheTimes.MediumCacheTime)
 		s.cacheService.RefreshCache(cacheKey+":status", "done", s.cacheService.CacheTimes.MediumCacheTime)
 	}()
@@ -212,36 +214,43 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 	return searchID
 }
 
-func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, *wsdl.DynProductAvailableServicesResponse, *string, *bool, error) {
+func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, *wsdl.DynProductAvailableServicesResponse, *string, *bool, *string, *bool, error) {
 	statusKey := "asyncsearch:" + searchID + ":status"
 	dataKey := "asyncsearch:" + searchID + ":data"
 
 	status := cache.CheckCacheHit[string](s.cacheService, statusKey)
 	if status == nil {
-		return nil, nil, nil, nil, errors.New("Search ID not found")
+		return nil, nil, nil, nil, nil, nil, errors.New("Search ID not found")
 	}
 
 	if *status != "done" {
-		return status, nil, nil, nil, nil
+		return status, nil, nil, nil, nil, nil, nil
 	}
 
 	resp := cache.CheckCacheHit[wsdl.DynProductAvailableServicesResponse](s.cacheService, dataKey)
 	if resp == nil {
-		return nil, nil, nil, nil, errors.New("Corrupted result")
+		return nil, nil, nil, nil, nil, nil, errors.New("Corrupted result")
 	}
 
-	token := generateToken()
-	arr := *resp.FlightMainGroup.Items[0].FlightOptionsSuperBB
-	go s.cacheService.RefreshCache("flihghtPagecache:"+token, arr, s.cacheService.CacheTimes.MediumCacheTime)
+	flightToken := generateToken()
+	flightsArr := *resp.FlightMainGroup.Items[0].FlightOptionsSuperBB
+	go s.cacheService.RefreshCache("flightPagecache:"+flightToken, flightsArr, s.cacheService.CacheTimes.MediumCacheTime)
 
-	hasMore, err := trucateFlights(5, resp)
+	hasMoreFlights, err := trucateFlights(5, resp)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
-	// trucateHotels()
 
+	hotelToken := generateToken()
+	hotelsArray := *resp.Itinerary.Items[0].HotelOption
+	go s.cacheService.RefreshCache("hotelPagecache:"+hotelToken, hotelsArray, s.cacheService.CacheTimes.MediumCacheTime)
+
+	hasMoreHotels, err := trucateHotels(5, resp)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
 	newStatus := "done"
-	return &newStatus, resp, &token, &hasMore, nil
+	return &newStatus, resp, &flightToken, &hasMoreFlights, &hotelToken, &hasMoreHotels, nil
 }
 
 func trucateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
@@ -261,8 +270,22 @@ func trucateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) 
 	return false, nil
 }
 
+func trucateHotels(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
+	if len(resp.Itinerary.Items) > 1 {
+		return false, errors.New("More than one item in Intinerary")
+	}
+	i := resp.Itinerary.Items[0]
+
+	if len(i.HotelOption.Items) > length {
+		fmt.Println("trunquei resposta de", len(i.HotelOption.Items), "hoteis para", length, "hoteis")
+		i.HotelOption.Items = i.HotelOption.Items[:length]
+		return true, nil
+	}
+	return false, nil
+}
+
 func (s *Service) HandleDynSearchProductAvailableServicesFlightsPagination(token string, cursor, limit int) ([]*wsdl.DynFlightOption, bool, error) {
-	cacheKey := "flihghtPagecache:" + token
+	cacheKey := "flightPagecache:" + token
 
 	fullResp := cache.CheckCacheHit[wsdl.DynFlightOptionArray](s.cacheService, cacheKey)
 	if fullResp == nil || fullResp.Items == nil {
@@ -280,6 +303,27 @@ func (s *Service) HandleDynSearchProductAvailableServicesFlightsPagination(token
 	}
 
 	return flights[cursor:end], end < len(flights), nil
+}
+
+func (s *Service) HandleDynSearchProductAvailableServicesHotelsPagination(token string, cursor, limit int) ([]*wsdl.DynHotelOption, bool, error) {
+	cacheKey := "hotelPagecache:" + token
+
+	fullResp := cache.CheckCacheHit[wsdl.DynHotelOptionArray](s.cacheService, cacheKey)
+	if fullResp == nil || fullResp.Items == nil {
+		return nil, false, errors.New("pagination cache not found")
+	}
+
+	hotels := fullResp.Items
+	if cursor >= len(hotels) {
+		return []*wsdl.DynHotelOption{}, false, nil
+	}
+
+	end := cursor + limit
+	if end > len(hotels) {
+		end = len(hotels)
+	}
+
+	return hotels[cursor:end], end < len(hotels), nil
 }
 
 type SyncMetadata struct {
