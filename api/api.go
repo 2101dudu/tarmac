@@ -38,6 +38,9 @@ func (a *Api) Start() {
 	engine.GET("api/get/product/:prodCode", a.handleDynGetProductParameters)
 	engine.POST("api/dynamic/product/available-services", a.handleDynSearchProductAvailableServices)
 	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
+	engine.GET("api/dynamic/product/available-services/flights/page", a.handleDynSearchProductAvailableServicesFlightsPagination)
+	engine.GET("api/dynamic/product/available-services/hotels/page", a.handleDynSearchProductAvailableServicesHotelsPagination)
+	engine.GET("api/dynamic/product/available-services/hotels/:hotelCode/rooms/page", a.handleDynSearchProductAvailableServicesHotelRoomsPagination)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
 	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 	engine.POST("api/dynamic/product/send-email", a.handleSendEmail)
@@ -139,13 +142,32 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 		return
 	}
 
-	status, resp, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
+	status, resp, token, hasMore, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp})
+	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp, "token": token, "hasMore": hasMore})
 }
+
+func (a *Api) handleDynSearchProductAvailableServicesFlightsPagination(c *gin.Context) {
+	token, cursor, limit, err := parsePaginationParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	flights, hasMore, err := a.Coordinator.HandleDynSearchProductAvailableServicesFlightsPagination(token, cursor, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"flights": flights, "hasMore": hasMore})
+}
+
+func (a *Api) handleDynSearchProductAvailableServicesHotelsPagination(c *gin.Context) {}
+
+func (a *Api) handleDynSearchProductAvailableServicesHotelRoomsPagination(c *gin.Context) {}
 
 func (a *Api) handleDynSetServicesSelectedAndGetToken(c *gin.Context) {
 	prodCode := c.Query("prodCode")

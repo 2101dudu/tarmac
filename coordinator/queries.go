@@ -212,25 +212,74 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 	return searchID
 }
 
-func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, *wsdl.DynProductAvailableServicesResponse, error) {
+func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, *wsdl.DynProductAvailableServicesResponse, *string, *bool, error) {
 	statusKey := "asyncsearch:" + searchID + ":status"
 	dataKey := "asyncsearch:" + searchID + ":data"
 
 	status := cache.CheckCacheHit[string](s.cacheService, statusKey)
 	if status == nil {
-		return nil, nil, errors.New("Search ID not found")
+		return nil, nil, nil, nil, errors.New("Search ID not found")
 	}
 
 	if *status != "done" {
-		return status, nil, nil
+		return status, nil, nil, nil, nil
 	}
 
 	resp := cache.CheckCacheHit[wsdl.DynProductAvailableServicesResponse](s.cacheService, dataKey)
 	if resp == nil {
-		return nil, nil, errors.New("Corrupted result")
+		return nil, nil, nil, nil, errors.New("Corrupted result")
 	}
+
+	token := generateToken()
+	arr := *resp.FlightMainGroup.Items[0].FlightOptionsSuperBB
+	go s.cacheService.RefreshCache("flihghtPagecache:"+token, arr, s.cacheService.CacheTimes.MediumCacheTime)
+
+	hasMore, err := trucateFlights(5, resp)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	// trucateHotels()
+
 	newStatus := "done"
-	return &newStatus, resp, nil
+	return &newStatus, resp, &token, &hasMore, nil
+}
+
+func trucateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
+	if len(resp.FlightMainGroup.Items) > 1 {
+		return false, errors.New("More than one item in FlightMainGroup")
+	}
+	i := resp.FlightMainGroup.Items[0]
+
+	if len(i.FlightOptions.Items) > 0 {
+		return false, errors.New("More than zero items in FlightMainGroup.FlightOptions")
+	}
+	if len(i.FlightOptionsSuperBB.Items) > length {
+		fmt.Println("trunquei resposta de", len(i.FlightOptionsSuperBB.Items), "voos para", length, "voos")
+		i.FlightOptionsSuperBB.Items = i.FlightOptionsSuperBB.Items[:length]
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *Service) HandleDynSearchProductAvailableServicesFlightsPagination(token string, cursor, limit int) ([]*wsdl.DynFlightOption, bool, error) {
+	cacheKey := "flihghtPagecache:" + token
+
+	fullResp := cache.CheckCacheHit[wsdl.DynFlightOptionArray](s.cacheService, cacheKey)
+	if fullResp == nil || fullResp.Items == nil {
+		return nil, false, errors.New("pagination cache not found")
+	}
+
+	flights := fullResp.Items
+	if cursor >= len(flights) {
+		return []*wsdl.DynFlightOption{}, false, nil
+	}
+
+	end := cursor + limit
+	if end > len(flights) {
+		end = len(flights)
+	}
+
+	return flights[cursor:end], end < len(flights), nil
 }
 
 type SyncMetadata struct {
