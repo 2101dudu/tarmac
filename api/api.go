@@ -40,7 +40,7 @@ func (a *Api) Start() {
 	engine.GET("api/dynamic/product/available-services/status", a.handleAsyncAvailableServicesStatus)
 	engine.GET("api/dynamic/product/available-services/flights/page", a.handleDynSearchProductAvailableServicesFlightsPagination)
 	engine.GET("api/dynamic/product/available-services/hotels/page", a.handleDynSearchProductAvailableServicesHotelsPagination)
-	engine.GET("api/dynamic/product/available-services/hotels/:hotelCode/rooms/page", a.handleDynSearchProductAvailableServicesHotelRoomsPagination)
+	engine.GET("api/dynamic/product/available-services/hotels/rooms/page", a.handleDynSearchProductAvailableServicesHotelRoomsPagination)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
 	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
 	engine.POST("api/dynamic/product/send-email", a.handleSendEmail)
@@ -180,7 +180,20 @@ func (a *Api) handleDynSearchProductAvailableServicesHotelsPagination(c *gin.Con
 	c.JSON(http.StatusOK, gin.H{"hotels": hotels, "hasMore": hasMore})
 }
 
-func (a *Api) handleDynSearchProductAvailableServicesHotelRoomsPagination(c *gin.Context) {}
+func (a *Api) handleDynSearchProductAvailableServicesHotelRoomsPagination(c *gin.Context) {
+	token, cursor, limit, err := parsePaginationParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rooms, hasMore, err := a.Coordinator.HandleDynSearchProductAvailableServicesRoomsPagination(token, cursor, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rooms": rooms, "hasMore": hasMore})
+}
 
 func (a *Api) handleDynSetServicesSelectedAndGetToken(c *gin.Context) {
 	prodCode := c.Query("prodCode")

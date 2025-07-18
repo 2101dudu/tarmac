@@ -232,6 +232,7 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 		return nil, nil, nil, nil, nil, nil, errors.New("Corrupted result")
 	}
 
+	// flights
 	flightToken := generateToken()
 	flightsArr := *resp.FlightMainGroup.Items[0].FlightOptionsSuperBB
 	go s.cacheService.RefreshCache("flightPagecache:"+flightToken, flightsArr, s.cacheService.CacheTimes.MediumCacheTime)
@@ -241,6 +242,7 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
+	// hotels
 	hotelToken := generateToken()
 	hotelsArray := *resp.Itinerary.Items[0].HotelOption
 	go s.cacheService.RefreshCache("hotelPagecache:"+hotelToken, hotelsArray, s.cacheService.CacheTimes.MediumCacheTime)
@@ -249,6 +251,13 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
+
+	//rooms
+	err = s.truncateRooms(5, resp)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+
 	newStatus := "done"
 	return &newStatus, resp, &flightToken, &hasMoreFlights, &hotelToken, &hasMoreHotels, nil
 }
@@ -263,7 +272,6 @@ func trucateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) 
 		return false, errors.New("More than zero items in FlightMainGroup.FlightOptions")
 	}
 	if len(i.FlightOptionsSuperBB.Items) > length {
-		fmt.Println("trunquei resposta de", len(i.FlightOptionsSuperBB.Items), "voos para", length, "voos")
 		i.FlightOptionsSuperBB.Items = i.FlightOptionsSuperBB.Items[:length]
 		return true, nil
 	}
@@ -282,6 +290,28 @@ func trucateHotels(length int, resp *wsdl.DynProductAvailableServicesResponse) (
 		return true, nil
 	}
 	return false, nil
+}
+
+func (s *Service) truncateRooms(length int, resp *wsdl.DynProductAvailableServicesResponse) error {
+	for _, hotel := range resp.Itinerary.Items[0].HotelOption.Items {
+		if len(hotel.RoomsOccupancy.Items) > 1 {
+			return errors.New("More than one item in rooms")
+		}
+
+		roomsToken := generateToken()
+		hotel.Token = &roomsToken
+		rooms := hotel.RoomsOccupancy.Items[0].Rooms
+		go s.cacheService.RefreshCache("roomsPagecache:"+roomsToken, *rooms, s.cacheService.CacheTimes.MediumCacheTime)
+
+		hasMore := false
+		if len(rooms.Items) > length {
+			fmt.Println("trunquei resposta de", len(rooms.Items), "quartos para", length, "quartos")
+			rooms.Items = rooms.Items[:length]
+			hasMore = true
+		}
+		hotel.HasMore = &hasMore
+	}
+	return nil
 }
 
 func (s *Service) HandleDynSearchProductAvailableServicesFlightsPagination(token string, cursor, limit int) ([]*wsdl.DynFlightOption, bool, error) {
@@ -324,6 +354,27 @@ func (s *Service) HandleDynSearchProductAvailableServicesHotelsPagination(token 
 	}
 
 	return hotels[cursor:end], end < len(hotels), nil
+}
+
+func (s *Service) HandleDynSearchProductAvailableServicesRoomsPagination(token string, cursor, limit int) ([]*wsdl.DynRooms, bool, error) {
+	cacheKey := "roomsPagecache:" + token
+
+	fullResp := cache.CheckCacheHit[wsdl.DynRoomsArray](s.cacheService, cacheKey)
+	if fullResp == nil || fullResp.Items == nil {
+		return nil, false, errors.New("pagination cache not found")
+	}
+
+	rooms := fullResp.Items
+	if cursor >= len(rooms) {
+		return []*wsdl.DynRooms{}, false, nil
+	}
+
+	end := cursor + limit
+	if end > len(rooms) {
+		end = len(rooms)
+	}
+
+	return rooms[cursor:end], end < len(rooms), nil
 }
 
 type SyncMetadata struct {
