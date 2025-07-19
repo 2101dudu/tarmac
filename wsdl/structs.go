@@ -880,6 +880,8 @@ type DynItinerary struct {
 	DynSeniorPktStatic         *DynSeniorPktStaticArray         `xml:"DynSeniorPktStatic,omitempty" json:"DynSeniorPktStatic,omitempty" yaml:"DynSeniorPktStatic,omitempty"`
 	DynReductionNightPktStatic *DynReductionNightPktStaticArray `xml:"DynReductionNightPktStatic,omitempty" json:"DynReductionNightPktStatic,omitempty" yaml:"DynReductionNightPktStatic,omitempty"`
 	HotelOption                *DynHotelOptionArray             `xml:"HotelOption,omitempty" json:"HotelOption,omitempty" yaml:"HotelOption,omitempty"`
+	Token                      *string                          `xml:"Token,omitempty" json:"Token,omitempty" yaml:"Token,omitempty"`
+	HasMore                    *bool                            `xml:"HasMore,omitempty" json:"HasMore,omitempty" yaml:"HasMore,omitempty"`
 }
 
 // DynItineraryArray was auto-generated from WSDL.

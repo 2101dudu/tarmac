@@ -142,12 +142,12 @@ func (a *Api) handleAsyncAvailableServicesStatus(c *gin.Context) {
 		return
 	}
 
-	status, resp, flightsToken, hasMoreFlights, hotelsToken, hasMoreHotels, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
+	status, resp, flightsToken, hasMoreFlights, err := a.Coordinator.HandleAsyncAvailableServicesStatus(searchID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp, "flightsToken": flightsToken, "hasMoreFlights": hasMoreFlights, "hotelsToken": hotelsToken, "hasMoreHotels": hasMoreHotels})
+	c.JSON(http.StatusOK, gin.H{"status": status, "data": resp, "flightsToken": flightsToken, "hasMoreFlights": hasMoreFlights})
 }
 
 func (a *Api) handleDynSearchProductAvailableServicesFlightsPagination(c *gin.Context) {
