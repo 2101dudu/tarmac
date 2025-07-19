@@ -234,6 +234,9 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 
 	// flights
 	flightToken := generateToken()
+	if len(resp.FlightMainGroup.Items) != 1 {
+		return nil, nil, nil, nil, errors.New("Invalid number of flights: " + strconv.Itoa(len(resp.FlightMainGroup.Items)))
+	}
 	flightsArr := *resp.FlightMainGroup.Items[0].FlightOptionsSuperBB
 	go s.cacheService.RefreshCache("flightPagecache:"+flightToken, flightsArr, s.cacheService.CacheTimes.MediumCacheTime)
 
@@ -243,6 +246,11 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 	}
 
 	// hotels
+	err = deductRoomPricesIfAbsent(resp)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
 	err = s.truncateHotels(5, resp)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -258,10 +266,41 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 	return &newStatus, resp, &flightToken, &hasMoreFlights, nil
 }
 
-func truncateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
-	if len(resp.FlightMainGroup.Items) > 1 {
-		return false, errors.New("More than one item in FlightMainGroup")
+func deductRoomPricesIfAbsent(resp *wsdl.DynProductAvailableServicesResponse) error {
+	for _, itinerary := range resp.Itinerary.Items {
+		for _, hotel := range itinerary.HotelOption.Items {
+			if hotel.PriceFrom == nil {
+				return nil // TODO: check if returning an actual error will cause a lot of trouble
+			}
+
+			basePrice, err := strconv.ParseFloat(*hotel.PriceFrom, 32)
+			if err != nil {
+				return err
+			}
+			for _, room_ := range hotel.RoomsOccupancy.Items {
+				for _, room := range room_.Rooms.Items {
+					if room.UpgradeSupVal == nil {
+						continue // TODO: check if returning an actual error will cause a lot of trouble
+					}
+
+					upgradePrice := 0.0
+					if *room.UpgradeSupVal != "" {
+						upgradePrice, err = strconv.ParseFloat(*room.UpgradeSupVal, 32)
+						if err != nil {
+							return err
+						}
+					}
+
+					*room.SellValue = strconv.FormatFloat(basePrice+upgradePrice, 'f', 2, 32)
+				}
+			}
+		}
 	}
+
+	return nil
+}
+
+func truncateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
 	i := resp.FlightMainGroup.Items[0]
 
 	if len(i.FlightOptions.Items) > 0 {
