@@ -1,13 +1,18 @@
 package api
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"tarmac/coordinator"
 	"tarmac/utils"
 	"tarmac/wsdl"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -18,6 +23,55 @@ import (
 type Api struct {
 	Coordinator         *coordinator.Service
 	AdminHashedPassword string
+}
+
+type responseBodyWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w responseBodyWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)                  // capture to buffer
+	return w.ResponseWriter.Write(b) // write to original writer
+}
+
+func ErrorHandler(f *os.File) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		// Read and restore request body
+		bodyBytes, _ := io.ReadAll(c.Request.Body)
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// Intercept response
+		w := &responseBodyWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
+		c.Writer = w
+
+		c.Next()
+
+		statusCode := c.Writer.Status()
+		if statusCode == http.StatusOK {
+			return
+		}
+
+		io := io.MultiWriter(f, os.Stdout)
+
+		fmt.Fprintln(io, "	----- DEBUG START -----")
+		fmt.Fprintln(io, "	[TIME]", time.Now().Format(time.RFC3339))
+		fmt.Fprintln(io, "	[DURATION]", time.Since(start))
+		fmt.Fprintln(io, "	[METHOD]", c.Request.Method)
+		fmt.Fprintln(io, "	[PATH]", c.Request.URL.Path)
+		fmt.Fprintln(io, "	[QUERY]", c.Request.URL.RawQuery)
+		fmt.Fprintln(io, "	[HEADERS]", c.Request.Header)
+		fmt.Fprintln(io, "	[REQUEST BODY]", string(bodyBytes))
+		fmt.Fprintln(io, "	[STATUS CODE]", statusCode)
+		fmt.Fprintln(io, "	[RESPONSE HEADERS]", c.Writer.Header())
+		fmt.Fprintln(io, "	[RESPONSE BODY]", w.body.String())
+		for _, err := range c.Errors {
+			fmt.Fprintln(io, "	[GIN ERROR]:", err.Error())
+		}
+		fmt.Fprintln(io, "	----- DEBUG END -----")
+	}
 }
 
 func (a *Api) Start() {
@@ -31,6 +85,14 @@ func (a *Api) Start() {
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
 	}))
+
+	gin.DisableConsoleColor()
+
+	// Logging to a file.
+	f, _ := os.Create("out/gin.log")
+	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+
+	engine.Use(ErrorHandler(f))
 
 	engine.GET("api/get/master-data", a.handleGetMasterData)
 	engine.POST("api/search/product", a.handleSearchProductWithBody)
