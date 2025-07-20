@@ -799,8 +799,6 @@ type DynHotelOption struct {
 	DynPktStaticOptions       *DynPktStaticOptionsArray       `xml:"DynPktStaticOptions,omitempty" json:"DynPktStaticOptions,omitempty" yaml:"DynPktStaticOptions,omitempty"`
 	Suplements                *DynSuplementsArray             `xml:"Suplements,omitempty" json:"Suplements,omitempty" yaml:"Suplements,omitempty"`
 	Scoring                   *string                         `xml:"Scoring,omitempty" json:"Scoring,omitempty" yaml:"Scoring,omitempty"`
-	Token                     *string                         `xml:"Token,omitempty" json:"Token,omitempty" yaml:"Token,omitempty"`
-	HasMore                   *bool                           `xml:"HasMore,omitempty" json:"HasMore,omitempty" yaml:"HasMore,omitempty"`
 }
 
 // DynHotelOptionArray was auto-generated from WSDL.
@@ -1442,6 +1440,8 @@ type DynRoomsOccupancy struct {
 	NumAdults      *string        `xml:"NumAdults,omitempty" json:"NumAdults,omitempty" yaml:"NumAdults,omitempty"`
 	NumChilds      *string        `xml:"NumChilds,omitempty" json:"NumChilds,omitempty" yaml:"NumChilds,omitempty"`
 	Rooms          *DynRoomsArray `xml:"Rooms,omitempty" json:"Rooms,omitempty" yaml:"Rooms,omitempty"`
+	Token          *string        `xml:"Token,omitempty" json:"Token,omitempty" yaml:"Token,omitempty"`
+	HasMore        *bool          `xml:"HasMore,omitempty" json:"HasMore,omitempty" yaml:"HasMore,omitempty"`
 }
 
 // DynRoomsOccupancyArray was auto-generated from WSDL.

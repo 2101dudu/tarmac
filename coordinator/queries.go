@@ -279,6 +279,14 @@ func deductRoomPricesIfAbsent(resp *wsdl.DynProductAvailableServicesResponse) er
 			}
 			for _, room_ := range hotel.RoomsOccupancy.Items {
 				for _, room := range room_.Rooms.Items {
+					if room.SellValue == nil {
+						continue // TODO: check if returning an actual error will cause a lot of trouble
+					}
+
+					if *room.SellValue != "" {
+						continue // already has value — skip
+					}
+
 					if room.UpgradeSupVal == nil {
 						continue // TODO: check if returning an actual error will cause a lot of trouble
 					}
@@ -335,13 +343,31 @@ func (s *Service) truncateHotels(length int, resp *wsdl.DynProductAvailableServi
 func (s *Service) truncateRooms(length int, resp *wsdl.DynProductAvailableServicesResponse) error {
 	for _, i := range resp.Itinerary.Items {
 		for _, hotel := range i.HotelOption.Items {
-			if len(hotel.RoomsOccupancy.Items) > 1 {
-				return errors.New("More than one item in rooms")
-			}
+			for _, r := range hotel.RoomsOccupancy.Items { // for more than one room
+				roomsToken := generateToken()
+				r.Token = &roomsToken
+				rooms := r.Rooms
+				go s.cacheService.RefreshCache("roomsPagecache:"+roomsToken, *rooms, s.cacheService.CacheTimes.MediumCacheTime)
 
+				hasMore := false
+				if len(rooms.Items) > length {
+					fmt.Println("trunquei resposta de", len(rooms.Items), "quartos para", length, "quartos")
+					rooms.Items = rooms.Items[:length]
+					hasMore = true
+				}
+				r.HasMore = &hasMore
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) truncateRoomsForHotels(length int, resp *wsdl.DynHotelOptionArray) error {
+	for _, hotel := range resp.Items {
+		for _, r := range hotel.RoomsOccupancy.Items {
 			roomsToken := generateToken()
-			hotel.Token = &roomsToken
-			rooms := hotel.RoomsOccupancy.Items[0].Rooms
+			r.Token = &roomsToken
+			rooms := r.Rooms
 			go s.cacheService.RefreshCache("roomsPagecache:"+roomsToken, *rooms, s.cacheService.CacheTimes.MediumCacheTime)
 
 			hasMore := false
@@ -350,30 +376,8 @@ func (s *Service) truncateRooms(length int, resp *wsdl.DynProductAvailableServic
 				rooms.Items = rooms.Items[:length]
 				hasMore = true
 			}
-			hotel.HasMore = &hasMore
+			r.HasMore = &hasMore
 		}
-	}
-	return nil
-}
-
-func (s *Service) truncateRoomsForHotels(length int, resp *wsdl.DynHotelOptionArray) error {
-	for _, hotel := range resp.Items {
-		if len(hotel.RoomsOccupancy.Items) > 1 {
-			return errors.New("More than one item in rooms")
-		}
-
-		roomsToken := generateToken()
-		hotel.Token = &roomsToken
-		rooms := hotel.RoomsOccupancy.Items[0].Rooms
-		go s.cacheService.RefreshCache("roomsPagecache:"+roomsToken, *rooms, s.cacheService.CacheTimes.MediumCacheTime)
-
-		hasMore := false
-		if len(rooms.Items) > length {
-			fmt.Println("trunquei resposta de", len(rooms.Items), "quartos para", length, "quartos")
-			rooms.Items = rooms.Items[:length]
-			hasMore = true
-		}
-		hotel.HasMore = &hasMore
 	}
 	return nil
 }
