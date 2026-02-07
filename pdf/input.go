@@ -39,12 +39,21 @@ type Policy struct {
 	Price   string
 }
 
+type Insurance struct {
+	Desc  string
+	Type  string
+	From  string
+	To    string
+	Price string
+}
+
 type PDFData struct {
 	GeneralInfo GeneralInfo
 	Services    []Service
 	Prices      []Price
 	TotalPrice  string
 	Policies    []Policy
+	Insurances  []Insurance
 
 	Conditions   string
 	Description  string
@@ -61,6 +70,7 @@ func (p *PDFData) fillPDF(f *os.File) {
 	input.WriteString(p.fillAllServices())
 	input.WriteString(p.fillAllPrices())
 	input.WriteString(p.fillAllPolicies())
+	input.WriteString(p.fillAllInsurances())
 
 	input.WriteString(p.fillConditions())
 	input.WriteString(p.fillDescription())
@@ -153,6 +163,22 @@ func (p *PDFData) fillAllPolicies() string {
 	for _, entry := range p.Policies {
 		newS := `("%s", "%s", "%s", "%s", "%s")`
 		newS = fmt.Sprintf(newS, entry.Kind, entry.Service, entry.From, entry.To, entry.Price)
+
+		s += "\n" + newS
+	}
+	s += `
+}
+`
+	return s
+}
+
+func (p *PDFData) fillAllInsurances() string {
+	s := `
+#let allInsurances = {
+`
+	for _, entry := range p.Insurances {
+		newS := `("%s", "%s", "%s", "%s", "%s")`
+		newS = fmt.Sprintf(newS, entry.Desc, entry.Type, entry.From, entry.To, entry.Price)
 
 		s += "\n" + newS
 	}
