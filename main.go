@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"tarmac/api"
 	"tarmac/cache"
 	"tarmac/coordinator"
@@ -16,6 +17,7 @@ func main() {
 
 	var clients []wsdl.Client
 	for i, _ := range vars.SOAPServices {
+		fmt.Println(i, vars.SOAPServices[i].System)
 		clients = append(clients, wsdl.Client{URL: vars.SOAPServices[i].APIEndpoint, Namespace: wsdl.Namespace, System: vars.SOAPServices[i].System, Client: vars.SOAPServices[i].Client, Username: vars.SOAPServices[i].Username, Password: vars.SOAPServices[i].Password})
 	}
 	wsdlClient := wsdl.ClientList{Clients: clients}
@@ -31,8 +33,7 @@ func main() {
 	dbClient := db.Client{Addr: vars.Endpoints.DBEndpoint, Username: vars.Credentials.DBUsername, Password: vars.Credentials.DBPassword}
 	dbService := dbClient.NewDbService()
 
-	logger.Start(vars.Logs.FilePath, true) // temp, change to flag system
-	// defer logger.Log.Close()
+	logger.Start(vars.Logs.FilePath)
 
 	mailClient := mail.Client{AgencyEmail: vars.EmailCredentials.AgencyEmail, InternalAgencyEmail: vars.EmailCredentials.InternalAgencyEmail, APIKey: vars.EmailCredentials.APIKey}
 	mailService := mailClient.Start()

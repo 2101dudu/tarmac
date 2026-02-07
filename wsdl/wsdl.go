@@ -105,6 +105,13 @@ func (s *ServiceList) DynGetSimulation(in DynGetSimulationRequest, serviceID int
 	return s.Services[serviceID].soapClient.DynGetSimulation(&in)
 }
 
+func (s *ServiceList) DynGetProductOptionals(sessionHash string, serviceID int) (*DynProductOptionalsResponse, error) {
+	return s.Services[serviceID].soapClient.DynProductOptionals(&DynProductOptionalsRequest{
+		Credentials: s.Services[serviceID].soapCredentials,
+		SessionHash: &sessionHash,
+	})
+}
+
 func (s *ServiceList) SearchProductsWithBodyNow(in SearchProductRequest) (*SearchProductResponse, error) {
 	depDateString := time.Now().Format(time.DateOnly)
 	in.DepDate = &depDateString

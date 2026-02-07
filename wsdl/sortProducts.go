@@ -1,11 +1,12 @@
 package wsdl
 
 import (
+	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"tarmac/logger"
 	"time"
 )
 
@@ -170,7 +171,7 @@ func ApplyQueryToData(products []*ProductWrapper, country, location, dateFrom, t
 		}
 	}
 
-	logger.Log.Log("Filtered products. Now have ", len(queried), " products")
+	slog.Debug("Filtered products. Now have " + fmt.Sprintf("%d", (len(queried))) + " products")
 
 	return queried
 }

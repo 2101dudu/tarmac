@@ -3,11 +3,12 @@ package coordinator
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
+	"sync"
 	"tarmac/cache"
 	"tarmac/db"
 	"tarmac/json"
-	"tarmac/logger"
 	"tarmac/utils"
 	"tarmac/wsdl"
 	"time"
@@ -85,6 +86,7 @@ func (s *Service) fetchProductsWithFallback(query ProductQuery, cacheKey, collec
 	} else {
 		refreshDB = true
 		productList, dbErr := db.GetAllProducts[wsdl.ProductWrapper](s.dbService, "product_index")
+		slog.Warn("Product search failed. Falling back to getting all products")
 		if dbErr != nil {
 			return nil, false, errors.New("DB fallback failed: " + dbErr.Error())
 		}
@@ -191,16 +193,19 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 	go func() {
 		productW, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, "product_index", *in.ProductCode)
 		if productW == nil {
-			logger.Log.Log("Product does not exist: ", *in.ProductCode)
+			slog.Error("Product does not exist: " + *in.ProductCode)
 			s.cacheService.RefreshCache(cacheKey+":status", "error", s.cacheService.CacheTimes.ShortCacheTime)
 			return
 		}
 		codePart, service := extractCodeAndService(*productW.Product.Code)
 		*in.ProductCode = codePart
 
+		d, _ := js.MarshalIndent(in, "", "\t")
+		fmt.Println(string(d))
+
 		resp, err := s.wsdlService.DynSearchProductAvailableServices(in, service)
 		if err != nil {
-			logger.Log.Log("Async search failed: ", err)
+			slog.Error("Async search failed: ", "Error", err)
 			s.cacheService.RefreshCache(cacheKey+":status", "error", s.cacheService.CacheTimes.ShortCacheTime)
 			return
 		}
@@ -212,6 +217,12 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 	}()
 
 	return searchID
+}
+
+func (s *Service) HandleDynProductOptionals(sessionHash, prodCode string) (*wsdl.DynProductOptionalsResponse, error) {
+	_, service := extractCodeAndService(prodCode)
+	fmt.Println(service)
+	return s.wsdlService.DynGetProductOptionals(sessionHash, service)
 }
 
 func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, *wsdl.DynProductAvailableServicesResponse, *string, *bool, error) {
@@ -231,6 +242,9 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 	if resp == nil {
 		return nil, nil, nil, nil, errors.New("Corrupted result")
 	}
+
+	//d, _ := js.MarshalIndent(resp, "", "\t")
+	//fmt.Println(string(d))
 
 	// flights
 	flightToken := generateToken()
@@ -311,14 +325,20 @@ func deductRoomPricesIfAbsent(resp *wsdl.DynProductAvailableServicesResponse) er
 func truncateFlights(length int, resp *wsdl.DynProductAvailableServicesResponse) (bool, error) {
 	i := resp.FlightMainGroup.Items[0]
 
-	if len(i.FlightOptions.Items) > 0 {
-		return false, errors.New("More than zero items in FlightMainGroup.FlightOptions")
+	if len(i.FlightOptions.Items) > length {
+		i.FlightOptions.Items = i.FlightOptions.Items[:length]
+		return true, nil
+	} else if len(i.FlightOptions.Items) != 0 {
+		return false, nil
 	}
+
 	if len(i.FlightOptionsSuperBB.Items) > length {
 		i.FlightOptionsSuperBB.Items = i.FlightOptionsSuperBB.Items[:length]
 		return true, nil
+	} else if len(i.FlightOptionsSuperBB.Items) != 0 {
+		return false, nil
 	}
-	return false, nil
+	return false, errors.New("No avilable flight options")
 }
 
 func (s *Service) truncateHotels(length int, resp *wsdl.DynProductAvailableServicesResponse) error {
@@ -539,7 +559,7 @@ func (s *Service) deleteStaleProducts(seen map[string]bool) {
 		code := *pw.Product.Code
 		if !seen[code] {
 			s.dbService.DeleteByID("product_index", code)
-			logger.Log.Log("Deleted stale product:", code)
+			slog.Debug("Deleted stale product: " + code)
 		}
 	}
 }
@@ -730,4 +750,122 @@ func (s *Service) HandleSendEmail(token string, info ContactInfo) (*wsdl.DynGetS
 	// if info.WantsNewsletter == "true" { }
 
 	return simul, nil
+}
+
+func (s *Service) HandleLoadFromMongo(collectionName, id string) *wsdl.ProductWrapper {
+	productData, _ := db.CheckDBHit[wsdl.ProductWrapper](s.dbService, collectionName, id)
+	return productData
+}
+
+func (s *Service) HandleCompareAvailableServices(field string) []string {
+	collectionName := "product_index"
+	resp, err := db.GetAllProducts[wsdl.ProductWrapper](s.dbService, collectionName)
+	if err != nil {
+		slog.Error("Unable to fetch all products", "Error", err)
+		return nil
+	}
+
+	type result struct {
+		ProductCode string
+		Response    string
+	}
+
+	results := make(chan result)
+	var wg sync.WaitGroup
+
+	for _, productW := range resp {
+		prodCode := productW.Product.Code
+		if prodCode == nil {
+			continue
+		}
+
+		wg.Add(1)
+
+		go func(code string) {
+			slog.Info("Searching " + *prodCode)
+			dummyInput := s.createDummySearchData(*prodCode)
+			if dummyInput == nil {
+				results <- result{
+					ProductCode: code,
+					Response:    "N/A",
+				}
+			}
+			dummySearchID := s.HandleDynSearchProductAvailableServices(*dummyInput)
+
+			status, resp, _, _, _ := s.HandleAsyncAvailableServicesStatus(dummySearchID)
+			if *status != "done" {
+				slog.Warn("Status was not done before fetching")
+			}
+
+			results <- result{
+				ProductCode: code,
+				Response:    extractField(resp, field),
+			}
+		}(*prodCode)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var final []string
+	for r := range results {
+		final = append(final, r.Response)
+	}
+
+	return final
+}
+
+func (s *Service) createDummySearchData(prodCode string) *wsdl.DynProductAvailableServicesRequest {
+	data, _ := s.HandleDynGetProductParameters(prodCode)
+
+	depDates := data.Data.DepartureDates.Items
+	if len(depDates) == 0 {
+		return nil
+	}
+	dummyDepDate := depDates[len(depDates)/2].Date // pick the middle option of array
+	dummyDepLocal := data.Data.DepartureLocals.Items[0].Code
+
+	dummyRoomNum := "1"
+	dummyRoomCode := data.Data.RoomTypes.Items[0].Code
+
+	dummyLocalCode := data.Data.BaseLocals.Items[0].Code
+	dummyLocalNights := data.Data.BaseLocals.Items[0].MinNights
+
+	return &wsdl.DynProductAvailableServicesRequest{
+		ProductCode:    &prodCode,
+		DepartureDate:  dummyDepDate,
+		DepartureLocal: dummyDepLocal,
+		RoomTypes: &wsdl.RoomTypeOptionArray{
+			Items: []*wsdl.RoomTypeOption{
+				&wsdl.RoomTypeOption{
+					RoomNum: &dummyRoomNum,
+					Code:    dummyRoomCode,
+				},
+			},
+		},
+		BaseLocals: &wsdl.LocalArray{
+			Items: []*wsdl.Local{
+				&wsdl.Local{
+					Code:   dummyLocalCode,
+					Nights: dummyLocalNights,
+				},
+			},
+		},
+	}
+}
+
+func extractField(resp *wsdl.DynProductAvailableServicesResponse, field string) string {
+	switch field {
+	case "bag":
+		val := resp.FlightMainGroup.Items[0].FlightOptionsSuperBB.Items[0].FlightSegments.Items[0].Flights.Items[0].Flights.Items[0].Bag
+		if val != nil {
+			return "N/A"
+		}
+		return *val
+
+	default:
+		return "N/A"
+	}
 }

@@ -3,8 +3,8 @@ package db
 import (
 	"context"
 	"log"
+	"log/slog"
 	"tarmac/json"
-	"tarmac/logger"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -64,7 +64,7 @@ func CheckDBHit[T any](dbService *Service, collectionName string, id string) (*T
 	}
 	uncompressedData, err := json.Uncompress[T](soapStore.Payload)
 	if err != nil {
-		logger.Log.Log("Error uncompressing json:", err)
+		slog.Error("Error uncompressing json:", "Error", err)
 		return nil, false
 	}
 	return uncompressedData, time.Since(soapStore.FetchedAt) > 24*time.Hour
@@ -75,9 +75,9 @@ func (db *Service) RefreshDB(collectionName string, id string, data any) {
 	collection := db.returnCollectionPointer(collectionName)
 	err := storeData(collection, id, data)
 	if err != nil {
-		logger.Log.Log("Failed DB refresh: ", err)
+		slog.Error("Failed DB refresh: ", "Error", err)
 	} else {
-		logger.Log.Log("DB refreshed for: ", collectionName)
+		slog.Debug("DB refreshed for: " + collectionName)
 	}
 }
 
@@ -105,7 +105,7 @@ func GetAllProducts[T any](dbService *Service, collectionName string) ([]*T, err
 	for _, document := range documents {
 		uncompressed, err := json.Uncompress[T](document.Payload)
 		if err != nil {
-			logger.Log.Log("Failed to uncompress payload:", err)
+			slog.Error("Failed to uncompress payload:", "Error", err)
 			continue
 		}
 		products = append(products, uncompressed)
@@ -123,14 +123,14 @@ func (db *Service) DeleteByID(collectionName string, id string) error {
 func (db *Service) RemoveCollections() {
 	collections, err := db.mongoClient.Database("tarmac").ListCollectionNames(context.TODO(), struct{}{})
 	if err != nil {
-		logger.Log.Log("Failed to list Mongo collections:", err)
+		slog.Error("Failed to list Mongo collections:", "Error", err)
 		return
 	}
 	for _, col := range collections {
 		if err := db.mongoClient.Database("tarmac").Collection(col).Drop(context.TODO()); err != nil {
-			logger.Log.Log("Failed to drop collection "+col+":", err)
+			slog.Error("Failed to drop collection "+col+":", "Error", err)
 		} else {
-			logger.Log.Log("Dropped collection:", col)
+			slog.Debug("Dropped collection:" + col)
 		}
 	}
 }

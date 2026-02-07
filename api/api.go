@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,7 +18,6 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
-	"github.com/robfig/cron/v3"
 )
 
 type Api struct {
@@ -75,12 +75,16 @@ func ErrorHandler(f *os.File) gin.HandlerFunc {
 }
 
 func (a *Api) Start() {
+	// Logging to a file.
+	f, _ := os.Create("out/gin.log")
+	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+
 	engine := gin.Default()
 	engine.SetTrustedProxies(nil)
 	engine.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	engine.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://192.168.1.120:3000"},
+		AllowOrigins:     []string{"http://192.168.1.207:3000"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -88,12 +92,9 @@ func (a *Api) Start() {
 
 	gin.DisableConsoleColor()
 
-	// Logging to a file.
-	f, _ := os.Create("out/gin.log")
-	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
-
 	engine.Use(ErrorHandler(f))
 
+	engine.GET("api/health", a.handleHealthCheck)
 	engine.GET("api/get/master-data", a.handleGetMasterData)
 	engine.POST("api/search/product", a.handleSearchProductWithBody)
 	engine.GET("api/search/product/page", a.handleSearchProductPagination)
@@ -103,8 +104,10 @@ func (a *Api) Start() {
 	engine.GET("api/dynamic/product/available-services/flights/page", a.handleDynSearchProductAvailableServicesFlightsPagination)
 	engine.GET("api/dynamic/product/available-services/hotels/page", a.handleDynSearchProductAvailableServicesHotelsPagination)
 	engine.GET("api/dynamic/product/available-services/hotels/rooms/page", a.handleDynSearchProductAvailableServicesHotelRoomsPagination)
+	engine.GET("api/dynamic/product/optionals", a.handleDynProductOptionals)
 	engine.POST("api/dynamic/product/set-services", a.handleDynSetServicesSelectedAndGetToken)
 	engine.GET("api/dynamic/product/get-simulation", a.handleDynGetSimulation)
+	engine.POST("api/dynamic/product/set-insurance", a.handleDynSetServicesSelectedAndGetToken)
 	engine.POST("api/dynamic/product/send-email", a.handleSendEmail)
 	engine.GET("api/page/highlighted/tag", a.handleGetHighlightedTag)
 
@@ -123,19 +126,20 @@ func (a *Api) Start() {
 
 	//========================================================================
 	engine.GET("api/admin/reset-state", a.handleResetState) // DEV PURPOSE
+	engine.GET("api/load/mongodb", a.handleLoadFromMongo)
+	engine.GET("api/compare/available-services", a.handleCompareAvailableServices)
 	//========================================================================
 
 	//========================================================================
 	engine.GET("api/admin/sync/products", a.handleSyncAllProducts) // MANUAL CALL
-
-	c := cron.New()
-	c.AddFunc("0 */6 * * *", func() {
-		_ = a.Coordinator.HandleSyncAllProducts()
-	})
-	c.Start()
 	//========================================================================
 
-	engine.Run("192.168.1.120:8080")
+	engine.Run("192.168.1.207:8080")
+}
+
+func (a *Api) handleHealthCheck(c *gin.Context) {
+	slog.Info("Healthy")
+	c.JSON(http.StatusOK, gin.H{"status": "Healthy"})
 }
 
 func (a *Api) handleGetMasterData(c *gin.Context) {
@@ -257,6 +261,17 @@ func (a *Api) handleDynSearchProductAvailableServicesHotelRoomsPagination(c *gin
 	c.JSON(http.StatusOK, gin.H{"rooms": rooms, "hasMore": hasMore})
 }
 
+func (a *Api) handleDynProductOptionals(c *gin.Context) {
+	sessionHash := c.Query("sessionHash")
+	prodCode := c.Query("prodCode")
+	optionals, err := a.Coordinator.HandleDynProductOptionals(sessionHash, prodCode)
+	if err != nil || optionals == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"optionals": optionals})
+}
+
 func (a *Api) handleDynSetServicesSelectedAndGetToken(c *gin.Context) {
 	prodCode := c.Query("prodCode")
 	var input wsdl.DynServicesSelectedRequest
@@ -374,6 +389,25 @@ func (a *Api) handleResetState(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "reset concluded"})
 }
 
+func (a *Api) handleLoadFromMongo(c *gin.Context) {
+	collection := c.Query("collection")
+	id := c.Query("id")
+	product := a.Coordinator.HandleLoadFromMongo(collection, id)
+	if product == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no product found"})
+	}
+	c.JSON(http.StatusOK, gin.H{"product": product})
+}
+
+func (a *Api) handleCompareAvailableServices(c *gin.Context) {
+	field := c.Query("field")
+	fields := a.Coordinator.HandleCompareAvailableServices(field)
+	if fields == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields found"})
+	}
+	c.JSON(http.StatusOK, gin.H{"fields": fields})
+}
+
 func (a *Api) handleSyncAllProducts(c *gin.Context) {
 	err := a.Coordinator.HandleSyncAllProducts()
 	if err != nil {
@@ -427,11 +461,6 @@ func (a *Api) handleListAllProducts(c *gin.Context) {
 
 func (a *Api) handleAddProductTags(c *gin.Context) {
 	prodCodeRaw := c.Param("prodCode")
-	_, err := strconv.Atoi(prodCodeRaw)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 
 	var req struct {
 		Tags []string `json:"tags"`
@@ -447,11 +476,6 @@ func (a *Api) handleAddProductTags(c *gin.Context) {
 
 func (a *Api) handleRemoveProductTags(c *gin.Context) {
 	tagToRemove, prodCodeRaw := c.Param("tagToRemove"), c.Param("prodCode")
-	_, err := strconv.Atoi(prodCodeRaw)
-	if err != nil || tagToRemove == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": errors.New("Incorrect parameters")})
-		return
-	}
 
 	go a.Coordinator.HandleRemoveProductTags(tagToRemove, prodCodeRaw)
 	c.JSON(http.StatusOK, gin.H{"message": "Tag removed successfully"})
@@ -459,11 +483,6 @@ func (a *Api) handleRemoveProductTags(c *gin.Context) {
 
 func (a *Api) handleProductToggleState(c *gin.Context) {
 	prodCodeRaw := c.Param("prodCode")
-	_, err := strconv.Atoi(prodCodeRaw)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 
 	go a.Coordinator.HandleProductToggleState(prodCodeRaw)
 	c.JSON(http.StatusOK, gin.H{"message": "Product state changed successfully"})

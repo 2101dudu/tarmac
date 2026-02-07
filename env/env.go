@@ -106,7 +106,7 @@ func loadSoapServices() []*SoapService {
 	services = append(services, loadSoapServiceSoltropico())
 	services = append(services, loadSoapServiceViajarTours())
 	services = append(services, loadSoapServiceLusanova())
-	services = append(services, loadSoapServiceViagensTempo())
+	//services = append(services, loadSoapServiceViagensTempo())
 	return services
 }
 

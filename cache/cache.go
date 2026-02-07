@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"tarmac/logger"
+	"log/slog"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -40,32 +40,30 @@ func (c *Client) NewCacheService() *Service {
 }
 
 func CheckCacheHit[T any](cacheService *Service, key string) *T {
-	// defer logger.Log.TrackTime()()
 	data, err := loadJSON[T](cacheService, key)
 	if err != nil {
-		logger.Log.Log("Failed cache check:", err)
+		slog.Warn("Failed cache check:", "Error", err)
 	} else if data == nil {
-		logger.Log.Log("No Cache Hit")
+		slog.Debug("No Cache Hit")
 	} else {
-		logger.Log.Log("Cache Hit!")
+		slog.Debug("Cache Hit!")
 	}
 	return data
 }
 
 func (c *Service) RefreshCache(key string, data any, ttl time.Duration) {
-	// defer logger.Log.TrackTime()()
 	err := c.storeJSON(key, data, ttl)
 	if err != nil {
-		logger.Log.Log("Failed cache refresh:", err)
+		slog.Warn("Failed cache refresh:", "Error", err)
 	} else {
-		logger.Log.Log("Cache refreshed")
+		slog.Debug("Cache refreshed")
 	}
 }
 
 func (c *Service) RemoveCache() {
 	if err := c.redisClient.FlushAll().Err(); err != nil {
-		logger.Log.Log("Failed to flush Redis:", err)
+		slog.Warn("Failed to flush Redis:", "Error", err)
 	} else {
-		logger.Log.Log("Redis cache cleared")
+		slog.Debug("Redis cache cleared")
 	}
 }
