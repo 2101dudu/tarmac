@@ -114,7 +114,7 @@ func (s *ServiceList) DynGetProductOptionals(sessionHash string, serviceID int) 
 
 func (s *ServiceList) SearchProductsWithBodyNow(in SearchProductRequest) (*SearchProductResponse, error) {
 	depDateString := time.Now().Format(time.DateOnly)
-	in.DepDate = &depDateString
+	in.ProdDateFrom = &depDateString
 
 	var prodArray []*Product
 	tp := 0

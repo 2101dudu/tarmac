@@ -64,3 +64,14 @@
     ..(allPolicies),
   )
 }
+
+#let insurances = {
+  table(
+    columns: (4fr, 2fr, 2fr, 2fr, 1.5fr),
+    inset: (x: 7pt, y: 5pt),
+    align: left + horizon,
+    table.header(title("Descrição", "Description", flexed: true), title("Tipo", "Type", flexed: true),  title("De", "From", flexed: true), title("Até", "To", flexed: true), title("Valor", "Price", flexed: true)
+    ),
+    ..(allInsurances),
+  )
+}
