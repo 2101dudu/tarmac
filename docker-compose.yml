@@ -43,7 +43,7 @@ services:
 networks:
   exposed:
     external: true
-    name: blackmesa
+    name: tarmac
 
 volumes:
   mongodata:

@@ -1,5 +1,3 @@
-# temp
-
 
 # Useful commands
 ## MongoDB
@@ -18,4 +16,12 @@ show collections
 
 db.collectionName.find().pretty()
 db.collectionName.find({ key: value }).pretty()
+```
+
+
+# Build
+
+```bash
+docker build -t tarmac .
+docker compose up -d
 ```
