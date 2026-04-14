@@ -25,3 +25,8 @@ db.collectionName.find({ key: value }).pretty()
 docker build -t tarmac .
 docker compose up -d
 ```
+
+or locally:
+```
+docker compose -f docker-compose.local.yml up -d
+```
