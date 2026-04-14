@@ -12,26 +12,24 @@ import (
 var pdfGenMutex sync.Mutex
 
 func (p *PDFData) GeneratePDF() (string, error) {
-	pdfGenMutex.Lock()
-	defer pdfGenMutex.Unlock()
-
-	filePath := "pdf/template/input.typ"
-
-	f, err := os.Create(filePath)
+	tmpFile, err := os.CreateTemp("pdf/template", "input_*.typ")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	defer os.Remove(filePath)
 
-	p.fillPDF(f)
-	return p.compilePDF()
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+	defer tmpFile.Close()
+
+	p.fillPDF(tmpFile)
+	return p.compilePDF(tmpPath)
 }
 
-func (p *PDFData) compilePDF() (string, error) {
+func (p *PDFData) compilePDF(inputPath string) (string, error) {
 	re := regexp.MustCompile(` `)
 	output := fmt.Sprintf("out/pdf/orcamento_%s_%d.pdf", re.ReplaceAllString(p.GeneralInfo.CustomerName, "_"), p.GeneralInfo.QuotationNumber)
-	out, err := exec.Command("typst", "compile", "pdf/template/main.typ", output).CombinedOutput()
+
+	out, err := exec.Command("typst", "compile", inputPath, output).CombinedOutput()
 
 	if err != nil {
 		slog.Error("Typst Error", "Output", string(out))

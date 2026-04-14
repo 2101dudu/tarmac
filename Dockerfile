@@ -13,7 +13,11 @@ RUN go build -o tarmac .
 # Run stage
 FROM alpine:latest
 
+RUN apk add --no-cache typst
+
 WORKDIR /app
+
+RUN mkdir -p out/pdf backups
 
 # Copy the built binary
 COPY --from=builder /app/tarmac .
