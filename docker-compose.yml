@@ -1,21 +1,24 @@
 services:
 
-  #tarmac:
-  #  image: tarmac:latest
-  #  container_name: tarmac
-  #  volumes:
-  #    - ./.env:/app/.env
-  #  ports:
-  #    - "8080:8080"
-  #  depends_on:
-  #    - mongodb
-  #    - redis
-  #  healthcheck:
-  #    test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
-  #    interval: 10s
-  #    timeout: 3s
-  #    retries: 3
-      
+  tarmac:
+    image: tarmac:latest
+    container_name: tarmac
+    volumes:
+      - ./.env:/app/.env
+      - ./out:/app/out
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongodb
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
+      interval: 90s
+      timeout: 1s
+      retries: 3
+    networks:
+      - exposed
+     
   mongodb:
     image: mongo
     container_name: mongodb
@@ -26,12 +29,21 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
       - mongodata:/data/db
+    networks:
+      - exposed
 
   redis:
     image: redis
     container_name: redis-test-instance
     ports:
       - "6379:6379"
+    networks:
+      - exposed
+
+networks:
+  exposed:
+    external: true
+    name: tarmac
 
 volumes:
   mongodata:

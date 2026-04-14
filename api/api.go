@@ -84,7 +84,7 @@ func (a *Api) Start() {
 	engine.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	engine.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://192.168.1.182:3000"},
+		AllowOrigins:     []string{"http://192.168.1.140:3000", "http://localhost:3000", "http://0.0.0.0:3000", "https://vizela.blackmesa.local", "https://vizela.eduardofaria.com"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -134,7 +134,7 @@ func (a *Api) Start() {
 	engine.GET("api/admin/sync/products", a.handleSyncAllProducts) // MANUAL CALL
 	//========================================================================
 
-	engine.Run("192.168.1.182:8080")
+	engine.Run("0.0.0.0:8080")
 }
 
 func (a *Api) handleHealthCheck(c *gin.Context) {
