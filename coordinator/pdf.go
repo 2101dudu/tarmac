@@ -18,6 +18,7 @@ func fillPDF(simul *wsdl.DynGetSimulationResponse, name, surname string, quotati
 		Prices:       fillPrices(simul.Calcs.Items),
 		TotalPrice:   extractPointer(simul.TotalPrice),
 		Policies:     fillPolicies(simul.Policies.Items),
+		Insurances:   fillInsurances(simul.Services.Items, simul.Calcs.Items),
 		Conditions:   extractPointer(simul.Conditions),
 		Description:  extractPointer(simul.Conditions),
 		Program:      "BIG ASS TExTO SOBRE Program",
@@ -77,4 +78,78 @@ func fillPolicies(simul []*wsdl.DynPolicies) []pdf.Policy {
 		res = append(res, p)
 	}
 	return res
+}
+
+func fillInsurances(services []*wsdl.DynResServices, calcs []*wsdl.DynResCalcs) []pdf.Insurance {
+	var res []pdf.Insurance
+
+	// Build a map of insurance pricing from calcs
+	insurancePricing := make(map[string]string)
+	for _, c := range calcs {
+		if c == nil || c.Service == nil {
+			continue
+		}
+		service := extractPointer(c.Service)
+		// Check if this is an insurance service (contains "Seguro" or "Insurance")
+		if containsIgnoreCase(service, "Seguro") || containsIgnoreCase(service, "Insurance") {
+			desc := extractPointer(c.Description)
+			price := extractPointer(c.GrossTotalVal)
+			insurancePricing[desc] = price
+		}
+	}
+
+	// Extract insurance services from services list
+	for _, s := range services {
+		if s == nil || s.Type == nil {
+			continue
+		}
+		serviceType := extractPointer(s.Type)
+		// Check if this is an insurance service
+		if containsIgnoreCase(serviceType, "Seguro") || containsIgnoreCase(serviceType, "Insurance") {
+			desc := extractPointer(s.Description)
+			// Try to get price from pricing map, fallback to empty
+			price := insurancePricing[desc]
+			if price == "" {
+				price = "0.00"
+			}
+
+			ins := pdf.Insurance{
+				Desc:  desc,
+				Type:  serviceType,
+				From:  extractPointer(s.DateFrom),
+				To:    extractPointer(s.DateTo),
+				Price: price,
+			}
+			res = append(res, ins)
+		}
+	}
+
+	return res
+}
+
+func containsIgnoreCase(s, substr string) bool {
+	sLower := ""
+	substrLower := ""
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			sLower += string(r + 32)
+		} else {
+			sLower += string(r)
+		}
+	}
+	for _, r := range substr {
+		if r >= 'A' && r <= 'Z' {
+			substrLower += string(r + 32)
+		} else {
+			substrLower += string(r)
+		}
+	}
+	return len(sLower) >= len(substrLower) && func() bool {
+		for i := 0; i <= len(sLower)-len(substrLower); i++ {
+			if sLower[i:i+len(substrLower)] == substrLower {
+				return true
+			}
+		}
+		return false
+	}()
 }
