@@ -1,22 +1,27 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 CONTAINER="mongodb"
 BACKUP_DIR="backups/mongodb"
 TIMESTAMP=$(date +%F)
+
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
 
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
 
 if [ -d "$BACKUP_DIR/$TIMESTAMP" ]; then
-    read -p "Backup for today exists, overwrite? [y/N]: " yn
-    case $yn in
-        [Yy]*) rm -rf "$BACKUP_DIR/$TIMESTAMP" ;;
-        *) echo "Aborting"; exit 1 ;;
-    esac
+    echo "Backup for today already exists. Overwriting..."
+    rm -rf "$BACKUP_DIR/$TIMESTAMP"
 fi
-
-source .env 
+ 
+echo "Starting MongoDB dump for $TIMESTAMP..."
 
 # Run mongodump inside the container
 docker exec "$CONTAINER" \

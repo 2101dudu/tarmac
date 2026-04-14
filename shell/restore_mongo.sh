@@ -3,6 +3,10 @@ set -e
 
 # Usage: ./restore_mongo.sh 2025-01-10
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 DATE="$1"
 BACKUP_DIR="backups/mongodb/$DATE"
 CONTAINER="mongodb"
