@@ -68,13 +68,7 @@
 
 #entry("POLÍTICAS DE CANCELAMENTO", "Cancel Policies", policies, none)
 
-#let ins = {
-  if allInsurances.len() > 0 {
-    entry("SEGURO", "Insurance", insurances, none)
-  }
-}
-#ins
-
+#entry("SEGUROS", "Insurances", insurances, none)
 
 #let cond = {
   if conditions.text != "" {

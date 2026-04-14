@@ -221,7 +221,6 @@ func (s *Service) HandleDynSearchProductAvailableServices(in wsdl.DynProductAvai
 
 func (s *Service) HandleDynProductOptionals(sessionHash, prodCode string) (*wsdl.DynProductOptionalsResponse, error) {
 	_, service := extractCodeAndService(prodCode)
-	fmt.Println(service)
 	return s.wsdlService.DynGetProductOptionals(sessionHash, service)
 }
 
@@ -260,10 +259,10 @@ func (s *Service) HandleAsyncAvailableServicesStatus(searchID string) (*string, 
 	}
 
 	// hotels
-	err = deductRoomPricesIfAbsent(resp)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
+	// err = deductRoomPricesIfAbsent(resp)
+	// if err != nil {
+	//	return nil, nil, nil, nil, err
+	// }
 
 	err = s.truncateHotels(5, resp)
 	if err != nil {
@@ -351,7 +350,6 @@ func (s *Service) truncateHotels(length int, resp *wsdl.DynProductAvailableServi
 
 		hasMore := false
 		if len(hotelsArray.Items) > length {
-			fmt.Println("trunquei resposta de", len(hotelsArray.Items), "hoteis para", length, "hoteis")
 			hotelsArray.Items = hotelsArray.Items[:length]
 			hasMore = true
 		}
@@ -371,7 +369,6 @@ func (s *Service) truncateRooms(length int, resp *wsdl.DynProductAvailableServic
 
 				hasMore := false
 				if len(rooms.Items) > length {
-					fmt.Println("trunquei resposta de", len(rooms.Items), "quartos para", length, "quartos")
 					rooms.Items = rooms.Items[:length]
 					hasMore = true
 				}
@@ -392,7 +389,6 @@ func (s *Service) truncateRoomsForHotels(length int, resp *wsdl.DynHotelOptionAr
 
 			hasMore := false
 			if len(rooms.Items) > length {
-				fmt.Println("trunquei resposta de", len(rooms.Items), "quartos para", length, "quartos")
 				rooms.Items = rooms.Items[:length]
 				hasMore = true
 			}
@@ -737,13 +733,14 @@ func (s *Service) HandleSendEmail(token string, info ContactInfo) (*wsdl.DynGetS
 
 	fp, err := pdf.GeneratePDF()
 	if err != nil {
-		fmt.Println(err.Error())
+		slog.Error(err.Error())
+		return nil, errors.New("Failed to generate PDF")
 	}
 
-	fmt.Println("PDF generated at", fp)
+	slog.Debug("PDF generated", "file_path", fp)
 
 	// send email
-	//s.mailService.SendEmails(fp, info.Email)
+	// s.mailService.SendEmails(fp, info.Email)
 
 	// make api call to store email on mailchimp
 	// TODO:

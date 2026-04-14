@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -30,10 +31,11 @@ func (p *PDFData) GeneratePDF() (string, error) {
 func (p *PDFData) compilePDF() (string, error) {
 	re := regexp.MustCompile(` `)
 	output := fmt.Sprintf("out/pdf/orcamento_%s_%d.pdf", re.ReplaceAllString(p.GeneralInfo.CustomerName, "_"), p.GeneralInfo.QuotationNumber)
-	fmt.Println(output)
-	err := exec.Command("typst", "compile", "pdf/template/main.typ", output).Run()
+	out, err := exec.Command("typst", "compile", "pdf/template/main.typ", output).CombinedOutput()
+
 	if err != nil {
-		return "", err
+		slog.Error("Typst Error", "Output", string(out))
+		return "", fmt.Errorf("Error executing typst compile: %v, Output: %s", err, string(out))
 	}
 	return output, nil
 }
