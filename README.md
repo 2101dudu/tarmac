@@ -28,5 +28,5 @@ docker compose up -d
 
 or locally:
 ```
-docker compose -f docker-compose.local.yml up -d
+docker compose -f compose.local.yaml up -d
 ```
