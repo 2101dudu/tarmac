@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"tarmac/coordinator"
-	"tarmac/utils"
 	"tarmac/wsdl"
 	"time"
 
@@ -84,7 +83,7 @@ func (a *Api) Start() {
 	engine.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	engine.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://192.168.1.140:3000", "http://localhost:3000", "http://0.0.0.0:3000", "https://vizela.blackmesa.local", "https://vizela.eduardofaria.com"},
+		AllowOrigins:     []string{"http://192.168.1.140:3000", "http://localhost:3000", "http://0.0.0.0:3000", "http://localhost:3001", "http://0.0.0.0:3001", "https://vizela.blackmesa.local", "https://vizela.eduardofaria.com"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -425,7 +424,7 @@ func (a *Api) handleAdminAuth(c *gin.Context) {
 	}
 
 	expected := a.AdminHashedPassword
-	if utils.GetSHA256Hash(body.Password) != expected {
+	if body.Password != expected {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
